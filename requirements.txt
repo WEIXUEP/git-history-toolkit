@@ -1,0 +1,3 @@
+# Required only for --execute-cleanup.
+git-filter-repo>=2.38
+
