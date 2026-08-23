@@ -69,6 +69,44 @@ python .\git_history_auditor.py `
 
 The default command only reads the repository and writes reports.
 
+## Remote-tracking branches and multi-branch cleanup
+
+For ordinary remote branches, the audit only needs the local remote-tracking
+refs. You do not need to create a separate local branch for every remote
+branch:
+
+```text
+refs/remotes/origin/main
+refs/remotes/origin/feature
+```
+
+Remote-tracking refs contain the remote branch tips and their reachable
+history. The auditor can use them to:
+
+- scan branch history;
+- protect the current tree of each branch;
+- determine whether a blob is still used by another branch;
+- include all locally visible branches in one history rewrite.
+
+Remote-tracking refs are local snapshots, so fetch the latest state before an
+audit or cleanup:
+
+```powershell
+git fetch origin --prune
+```
+
+After rewriting history, each affected remote branch must be explicitly
+updated. A remote-tracking ref can be mapped directly to its remote branch:
+
+```bash
+git push --force-with-lease origin \
+    refs/remotes/origin/feature:refs/heads/feature
+```
+
+Gerrit `refs/changes/*` are not ordinary remote-tracking branches. Fetch and
+analyze them separately when they are in scope. The auditor does not fetch
+automatically and does not push every remote branch automatically.
+
 ## Local cleanup without push
 
 ```powershell
