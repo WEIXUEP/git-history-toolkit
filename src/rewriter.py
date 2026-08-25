@@ -54,10 +54,12 @@ class GitHistoryRewriter:
         runner: GitRunner,
         options: AuditorOptions,
         confirm: Callable[[str], str] = input,
+        emit: Callable[[str], None] = print,
     ) -> None:
         self.runner = runner
         self.options = options
         self.confirm = confirm
+        self.emit = emit
         self._push_branch: str | None = None
         self._push_lease_oid: str | None = None
 
@@ -66,13 +68,16 @@ class GitHistoryRewriter:
             blob for blob in result.blobs if blob.action == CleanupAction.CLEAN_HISTORY
         ]
         if not clean_candidates:
-            print("No automatic cleanup candidates. Gerrit candidates require administrator review.")
+            self.emit(
+                "No automatic cleanup candidates. "
+                "Gerrit candidates require administrator review."
+            )
             return
 
         self._ensure_safe_workspace(result)
         self._print_candidates(clean_candidates)
         if self.confirm("Type CLEANUP to rewrite local history: ").strip() != "CLEANUP":
-            print("Cleanup cancelled; Git history was not modified.")
+            self.emit("Cleanup cancelled; Git history was not modified.")
             return
 
         ids_file = result.output_dir / "cleanup_blobs.txt"
@@ -100,29 +105,31 @@ class GitHistoryRewriter:
                 f"cleanup failed; backup bundle is available at {backup_bundle}: {exc}"
             ) from exc
 
-        print("\nLocal history cleanup completed successfully.")
-        print(f"Backup bundle: {backup_bundle}")
-        print("Confirmed historical paths/blobs removed from rewritten history:")
+        self.emit("\nLocal history cleanup completed successfully.")
+        self.emit(f"Backup bundle: {backup_bundle}")
+        self.emit("Confirmed historical paths/blobs removed from rewritten history:")
         for blob in clean_candidates:
-            print(f"  - {blob.sha}  {blob.primary_path or '(path unavailable)'}")
+            self.emit(f"  - {blob.sha}  {blob.primary_path or '(path unavailable)'}")
 
         if not self.options.push_after_cleanup:
-            print("No push was executed.")
-            print("Review the repository, then push manually with the command shown below.")
+            self.emit("No push was executed.")
+            self.emit("Review the repository, then push manually with the command shown below.")
             try:
-                print(f"  {self._push_command()}")
+                self.emit(f"  {self._push_command()}")
             except CleanupError:
-                print("  Push command unavailable because the repository is in detached HEAD state.")
+                self.emit(
+                    "  Push command unavailable because the repository is in detached HEAD state."
+                )
             return
 
         command = self._push_command()
-        print("\nThe following push will replace the remote branch history:")
-        print(f"  {command}")
+        self.emit("\nThe following push will replace the remote branch history:")
+        self.emit(f"  {command}")
         if self.confirm("Type PUSH to execute this force-with-lease push: ").strip() != "PUSH":
-            print("Push cancelled; local cleanup remains in place.")
+            self.emit("Push cancelled; local cleanup remains in place.")
             return
         self._push()
-        print("Push completed.")
+        self.emit("Push completed.")
 
     def _ensure_safe_workspace(self, result: AuditResult) -> None:
         status = self.runner.run("status", "--porcelain")
@@ -236,9 +243,11 @@ class GitHistoryRewriter:
         )
         return stdout.strip() if status == 0 and stdout.strip() else None
 
-    @staticmethod
-    def _print_candidates(blobs: list[BlobInfo]) -> None:
-        print("The following historical blobs will be removed from local rewritten history:")
+    def _print_candidates(self, blobs: list[BlobInfo]) -> None:
+        self.emit("The following historical blobs will be removed from local rewritten history:")
         for blob in blobs:
-            print(f"  - {blob.sha}  {blob.primary_path or '(path unavailable)'}  {blob.size_bytes} bytes")
-        print("Gerrit patch-set candidates are excluded and require administrator review.")
+            self.emit(
+                f"  - {blob.sha}  {blob.primary_path or '(path unavailable)'}  "
+                f"{blob.size_bytes} bytes"
+            )
+        self.emit("Gerrit patch-set candidates are excluded and require administrator review.")

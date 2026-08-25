@@ -10,7 +10,7 @@ requires a second interactive confirmation.
 
 ## Features
 
-- No JSON configuration file. All settings come from `argparse` options.
+- No JSON configuration file. All settings come from command-line arguments.
 - Protects `HEAD`, local branches, remote-tracking branches, and tags by default.
 - Distinguishes current blobs, protected blobs, old versions, deleted paths,
   and Gerrit patch-set references.
@@ -18,44 +18,48 @@ requires a second interactive confirmation.
 - Produces TXT, CSV, JSON, candidate SHA, and administrator review reports.
 - Creates a Git bundle backup before any history rewrite.
 - Verifies that the current `HEAD` tree is unchanged after rewriting history.
-- Uses `git filter-repo` only in the explicit cleanup mode.
-- Uses `git push --force-with-lease` only after the user types `PUSH`.
+- Uses `git filter-repo` only in explicit cleanup mode.
+- Uses `git push --force-with-lease` only after the user confirms the push.
+- Includes a lightweight Tkinter desktop interface with no extra UI dependency.
 
 ## Repository layout
 
 ```text
 git_large_object_auditor/
-├── git_history_auditor.py       # CLI entry point
-├── README.md
-├── .gitignore
-├── src/
-│   ├── auditor.py               # Audit orchestration
-│   ├── blob_scanner.py          # Large blob discovery
-│   ├── classifier.py            # Classification policy
-│   ├── current_tree_analyzer.py # Protected current trees
-│   ├── gerrit_analyzer.py       # refs/changes analysis
-│   ├── git_runner.py            # Git subprocess boundary
-│   ├── history_analyzer.py      # Blob history analysis
-│   ├── models.py                # Dataclasses and enums
-│   ├── options.py               # CLI options
-│   ├── policy.py                # Path and keep policies
-│   ├── ref_analyzer.py          # Git ref discovery
-│   ├── reporter.py              # Audit reports
-│   └── rewriter.py              # Explicit cleanup and push workflow
-└── tests/
+|-- git_history_auditor.py       # CLI entry point
+|-- git_history_auditor_gui.py   # Tkinter entry point
+|-- README.md
+|-- requirements.txt
+|-- src/
+|   |-- auditor.py               # Audit orchestration
+|   |-- blob_scanner.py          # Large blob discovery
+|   |-- classifier.py            # Classification policy
+|   |-- current_tree_analyzer.py # Protected current trees
+|   |-- gerrit_analyzer.py       # refs/changes analysis
+|   |-- git_runner.py            # Git subprocess boundary
+|   |-- history_analyzer.py      # Blob history analysis
+|   |-- models.py                # Dataclasses and enums
+|   |-- options.py               # CLI options
+|   |-- policy.py                # Path and keep policies
+|   |-- ref_analyzer.py          # Git ref discovery
+|   |-- reporter.py              # Audit reports
+|   |-- rewriter.py              # Explicit cleanup and push workflow
+|   `-- ui.py                    # Desktop interface
+`-- tests/
 ```
 
 ## Requirements
 
 - Python 3.10 or newer.
 - Git.
+- Tkinter, normally included with Python on Windows.
 - `git-filter-repo` for cleanup mode:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-## Audit only
+## Command-line audit
 
 Run this from the `git_large_object_auditor` directory:
 
@@ -69,11 +73,26 @@ python .\git_history_auditor.py `
 
 The default command only reads the repository and writes reports.
 
+## Desktop interface
+
+```powershell
+python .\git_history_auditor_gui.py
+```
+
+The UI provides three operations:
+
+- `Audit only`: read-only analysis and report generation.
+- `Cleanup locally`: local history rewrite after a confirmation dialog.
+- `Cleanup and push`: local cleanup followed by a separate push confirmation.
+
+Long-running Git work runs in a background thread so the window remains
+responsive. The cleanup and push confirmations cannot be bypassed by opening
+the UI.
+
 ## Remote-tracking branches and multi-branch cleanup
 
-For ordinary remote branches, the audit only needs the local remote-tracking
-refs. You do not need to create a separate local branch for every remote
-branch:
+For ordinary remote branches, the audit only needs local remote-tracking refs.
+You do not need to create a separate local branch for every remote branch:
 
 ```text
 refs/remotes/origin/main
@@ -167,15 +186,14 @@ Each audit creates a timestamped directory containing:
 - `blobs.csv` and `blobs.json`: detailed records for large blobs.
 - `candidates.csv`: all policy-eligible candidates.
 - `candidate_blobs.txt`: SHA IDs for eligible candidates.
-- `cleanup_blobs.txt`: only the IDs selected for automatic local rewriting.
+- `cleanup_blobs.txt`: only IDs selected for automatic local rewriting.
 - `protected_blobs.txt`: blobs protected by current refs or explicit rules.
 - `gerrit_referenced.csv`: blobs reachable from local Gerrit patch sets.
 - `admin_cleanup_plan.txt`: administrator review guidance.
 - `before_cleanup.bundle`: backup created before local rewriting.
 
-The audit never claims that the raw candidate size equals guaranteed disk
-space savings. Git pack compression and delta compression affect the final
-size.
+The audit never claims that raw candidate size equals guaranteed disk space
+savings. Git pack compression and delta compression affect the final size.
 
 ## Programmatic use
 
