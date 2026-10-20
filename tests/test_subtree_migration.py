@@ -99,7 +99,7 @@ class SubtreeFixtureTests(unittest.TestCase):
         self.assertEqual(refs(remote), before)
         for item in result["commands"]:
             self.assertIn(f"--force-with-lease={item['ref']}:{before[item['ref']]}", item["argv"])
-        text(remote, "update-ref", self.selected[0], text(self.fixture, "rev-parse", "main"))
+        text(remote, "update-ref", self.selected[0], text(self.fixture, "rev-parse", self.selected[0] + "^"))
         with self.assertRaises(MigrationError):
             publication_plan(self.plan, str(remote))
 
