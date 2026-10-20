@@ -6,7 +6,16 @@ Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skil
 
 Identify the absolute repository root, requested thresholds, branch/tag scope, and whether Gerrit is involved. Inspect worktree status, shallow status, refs, and configured fetch/push destinations. Use an existing working Python interpreter; an OS Python launcher placeholder is not an interpreter. This CLI requires a full, non-empty working clone; audit bare remotes through an independent full clone.
 
-Default to **100 MiB / 180 days** unless the user specifies other values. Explain a zero-result threshold before changing it. For the published test fixture, use **5 MiB / 180 days**, as documented in [audit-testing.md](audit-testing.md).
+Suggest **100 MiB / 180 days** unless the user specifies other values. The CLI
+opens an editable threshold-confirmation page before scanning; the user must
+manually confirm size and days, including values supplied on the command line.
+Changing either field resets confirmation. Cancellation/timeout stops before
+analysis. Explain that days measure the latest observed historical reference
+change (including deletion), not filesystem mtime or the last snapshot that
+retains an object. Never select the confirmation checkbox or submit for the
+user. Explain a zero-result threshold before changing it. For the published
+test fixture, suggest **5 MiB / 180 days**, as documented in
+[audit-testing.md](audit-testing.md).
 
 ```powershell
 python "<skill>/scripts/git_history_auditor.py" --repo "<repository-root>" --output-dir "<external-report-directory>" --min-size-mb 100 --min-age-days 180
@@ -28,7 +37,8 @@ or select/submit on the user's behalf. REVIEW saves a receipt only. For a
 headless host, arrange a reachable loopback URL or explain the limitation;
 --no-open-browser prints the URL while retaining HTML confirmation.
 Use --no-review-html for an explicitly requested terminal-only workflow or
-when a browser cannot be reached. This is a fallback, not implicit approval.
+when a browser cannot be reached. The terminal still asks for size and days
+and requires SCAN before analysis. This is a fallback, not implicit approval.
 
 `Policy eligible` includes Gerrit review objects; it is not the automatic cleanup count. Raw blob totals do not predict disk savings. Age measures the latest observed introducing/removing change from local history, not last filesystem access.
 

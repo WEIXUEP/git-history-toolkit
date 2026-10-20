@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
+import math
 from pathlib import Path
 from typing import Any
 
@@ -68,8 +69,8 @@ class AuditorOptions:
         """Convert an argparse Namespace (or compatible object) to options."""
         min_size_mb = float(getattr(args, "min_size_mb", 100.0))
         min_age_days = int(getattr(args, "min_age_days", 180))
-        if min_size_mb <= 0:
-            raise ValueError("min_size_mb must be greater than 0")
+        if min_size_mb <= 0 or not math.isfinite(min_size_mb * 1048576):
+            raise ValueError("min_size_mb must be greater than 0 and finite in bytes")
         if min_age_days < 0:
             raise ValueError("min_age_days must be greater than or equal to 0")
 

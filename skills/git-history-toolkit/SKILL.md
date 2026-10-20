@@ -18,7 +18,13 @@ uses the module. Check the required command before proposing execution.
 
 - For large objects, deleted files or old binary versions, read
   [references/audit-workflow.md](references/audit-workflow.md). Start with a
-  read-only audit; use 100 MiB / 180 days unless the user specifies otherwise.
+  read-only audit. Before scanning, the user must manually confirm minimum
+  size in MiB and minimum age in days in the default HTML parameter page.
+  100 MiB / 180 days are suggestions, never automatically accepted values;
+  command-line values also need confirmation. Age is since the last observed
+  history reference change, including addition/replacement/deletion, not
+  filesystem mtime or latest containing snapshot. Never fill or submit the
+  threshold page for the user. Cancel/timeout means no scan and no cleanup.
   Analysis must end with the default HTML review for manual suffix-based
   selection, readable sizes and exact historical presence times. Read
   [references/browser-review.md](references/browser-review.md). Open the page

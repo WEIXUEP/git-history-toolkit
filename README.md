@@ -100,6 +100,14 @@ Every CLI audit opens a Python-served local HTML review after analysis by defaul
 python .\git_history_toolkit.py audit --repo C:\repos\application --output-dir C:\audit\application
 ```
 
+Before analysis, an HTML parameter page requires the user to confirm minimum
+size in MiB and age in whole days. Defaults (100 MiB / 180 days) and CLI flags
+only prefill the fields. Editing a value resets the confirmation checkbox.
+Age means time since the last observed history reference change, including
+addition, replacement or deletion, not filesystem modification time. Cancel
+or timeout stops before scanning. Confirmation starts analysis only; it never
+authorizes cleanup. The object-selection page opens after analysis.
+
 The page groups by file suffix and displays readable and exact byte sizes,
 latest historical presence time, latest reference-change time, aliases and
 protection reasons. Nothing is selected initially. Protected/current objects
@@ -111,8 +119,9 @@ To let the user approve a final subset for actual cleanup, add
 CLEANUP and submit. Only those IDs are stripped after backup and state checks.
 No worktree files are deleted. Remote PUSH still requires separate approval.
 Cancellation, timeout and stale refs stop cleanup. Use `--no-open-browser` to
-print the local URL. Use `--no-review-html` for explicit terminal-only operation
-or unattended report generation. An unavailable browser never approves cleanup.
+print the local URL. Use `--no-review-html` for explicit terminal-only operation;
+it still requires size/day confirmation and SCAN before analysis.
+An unavailable browser never approves cleanup.
 See [browser review](skills/git-history-toolkit/references/browser-review.md)
 for timestamp semantics, SSH use and cross-platform dependencies.
 

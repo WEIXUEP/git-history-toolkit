@@ -7,6 +7,15 @@ asset dependency. A modern local browser is the only UI requirement.
 
 ## Review without rewriting
 
+Before scanning, the CLI opens a separate threshold page. The user edits or
+keeps the proposed minimum size (MiB) and age (whole days), checks the manual
+confirmation box and chooses Confirm and analyze. Editing a value clears
+that checkbox. CLI flags only prefill the fields; they do not bypass approval.
+No scan runs on cancellation or timeout. Threshold approval never authorizes
+cleanup. Never fill or submit it on behalf of the user. The second HTML page
+opens after analysis for object selection and REVIEW/CLEANUP confirmation.
+In terminal-only mode the user enters size and days and confirms with SCAN.
+
 ```powershell
 python '<skill>/scripts/git_history_toolkit.py' audit --repo '<repo>' --output-dir '<external-report>'
 ```
@@ -94,3 +103,5 @@ msedge. This exercises filtering, selection, disabled confirmation and two
 desktop viewport sizes, then cancels the read-only session. Add --save to test saving
 a review-only selection instead. Node/Playwright are not runtime dependencies
 of the skill.
+Use --thresholds against the initial parameter URL to test parameter editing
+and confirm an approved disposable read-only scan before testing its result URL.

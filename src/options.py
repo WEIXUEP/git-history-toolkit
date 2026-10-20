@@ -11,10 +11,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--repo", required=True, help="Path to the Git repository.")
     parser.add_argument(
-        "--min-size-mb", type=float, default=100.0, help="Minimum blob size in MiB."
+        "--min-size-mb", type=float, default=100.0, help="Proposed minimum blob size in MiB; requires manual confirmation."
     )
     parser.add_argument(
-        "--min-age-days", type=int, default=180, help="Minimum age since last reference."
+        "--min-age-days", type=int, default=180, help="Proposed days since the last history reference change; requires manual confirmation."
     )
 
     for name, default, help_text in (

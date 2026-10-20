@@ -25,6 +25,17 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         auditor = GitLargeObjectAuditor(args)
+        from src.html_review import confirm_thresholds
+        from src.repository import RepositoryInspector
+        args.repo = str(RepositoryInspector(auditor.runner).validate())
+        auditor = GitLargeObjectAuditor(args)
+        thresholds = confirm_thresholds(auditor.options)
+        if thresholds is None:
+            print("Threshold confirmation cancelled; analysis and cleanup were not started.")
+            return 0
+        args.min_size_mb = thresholds["min_size_mb"]
+        args.min_age_days = thresholds["min_age_days"]
+        auditor = GitLargeObjectAuditor(args)
         result = auditor.run()
         if args.execute_cleanup:
             GitHistoryRewriter(auditor.runner, auditor.options).execute(result)

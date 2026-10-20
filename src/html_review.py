@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import math
 from pathlib import Path, PurePosixPath
 import secrets
 import threading
@@ -79,7 +80,7 @@ class ReviewSession:
         self.done = threading.Event()
         self.lock = threading.Lock()
         self.selected = None
-        self.allowed = {row["sha"] for row in payload["rows"] if row["eligible"]}
+        self.allowed = {row["sha"] for row in payload.get("rows", []) if row["eligible"]}
         self.digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         self.server = LocalReviewHTTPServer(("127.0.0.1", 0), self._handler())
         self.origin = f"http://127.0.0.1:{self.server.server_port}"
@@ -114,7 +115,8 @@ class ReviewSession:
                     return
                 data = dict(session.payload, token=session.token, digest=session.digest)
                 encoded = json.dumps(data, ensure_ascii=True).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-                template = Path(__file__).with_name("review.html").read_text(encoding="utf-8")
+                template_name = "thresholds.html" if session.payload["mode"] == "thresholds" else "review.html"
+                template = Path(__file__).with_name(template_name).read_text(encoding="utf-8")
                 page = template.replace("__NONCE__", session.nonce).replace("__DATA__", encoded)
                 self.reply(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -137,6 +139,13 @@ class ReviewSession:
                         raise ValueError("Review content changed")
                     if body.get("cancel") is True:
                         chosen = None
+                    elif session.payload["mode"] == "thresholds":
+                        size, days = body.get("min_size_mb"), body.get("min_age_days")
+                        if (body.get("confirmation") != "THRESHOLDS"
+                                or type(size) not in (int, float) or not math.isfinite(size * 1048576) or size <= 0
+                                or type(days) is not int or not 0 <= days <= 365000):
+                            raise ValueError("Confirm a positive finite MiB size and integer days from 0 to 365000")
+                        chosen = {"min_size_mb": size, "min_age_days": days}
                     else:
                         ids = body.get("selected")
                         if (not isinstance(ids, list) or not ids or any(not isinstance(sha, str) for sha in ids)
@@ -146,7 +155,7 @@ class ReviewSession:
                         if body.get("confirmation") != expected:
                             raise ValueError(f"Type {expected} to confirm")
                         chosen = sorted(ids)
-                except (ValueError, TypeError, AttributeError, OSError):
+                except (ValueError, TypeError, AttributeError, OverflowError, OSError):
                     self.reply(400, b'{"error":"Invalid selection or confirmation"}')
                     return
                 with session.lock:
@@ -169,10 +178,9 @@ class ReviewSession:
         self.thread.join(timeout=5)
 
 
-def review_in_browser(result, options, mode="review", emit=print):
-    session = ReviewSession(review_payload(result, options, mode))
+def _await_browser(session, options, emit):
     session.start()
-    emit(f"Browser review ({mode}): {session.url}")
+    emit(f"Browser review ({session.payload['mode']}): {session.url}")
     emit("Closing the tab is not approval. Use Cancel or wait for timeout.")
     try:
         if not options.no_open_browser:
@@ -193,6 +201,33 @@ def review_in_browser(result, options, mode="review", emit=print):
         emit("Browser review cancelled.")
     finally:
         session.close()
+    return session.selected
+
+
+def confirm_thresholds(options, emit=print, prompt=input):
+    """Require a manual parameter decision before scanning; never approve cleanup."""
+    if options.review_html:
+        payload = {"mode": "thresholds", "repository": str(options.repo),
+                   "min_size_mb": options.min_size_mb, "min_age_days": options.min_age_days,
+                   "as_of": datetime.now(timezone.utc).isoformat()}
+        return _await_browser(ReviewSession(payload), options, emit)
+    emit("Confirm audit thresholds. Age is since the last history reference change (including deletion), not filesystem mtime.")
+    try:
+        size = float(prompt(f"Minimum size in MiB [{options.min_size_mb}]: ").strip() or options.min_size_mb)
+        days = int(prompt(f"Minimum age in days [{options.min_age_days}]: ").strip() or options.min_age_days)
+        if not math.isfinite(size * 1048576) or size <= 0 or not 0 <= days <= 365000:
+            raise ValueError("Size must be positive and finite; days must be from 0 to 365000")
+        emit(f"Repository: {options.repo}; thresholds: {size} MiB / {days} days")
+        if prompt("Type SCAN to confirm these thresholds: ").strip() != "SCAN":
+            return None
+        return {"min_size_mb": size, "min_age_days": days}
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+
+def review_in_browser(result, options, mode="review", emit=print):
+    session = ReviewSession(review_payload(result, options, mode))
+    _await_browser(session, options, emit)
     receipt = {"mode": mode, "status": "confirmed" if session.selected else "cancelled",
                "repository": str(result.repository), "plan_digest": session.digest,
                "ref_state": result.ref_state, "selected": session.selected or [],

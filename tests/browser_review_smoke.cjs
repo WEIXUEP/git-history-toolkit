@@ -11,6 +11,24 @@ const assert = require('node:assert/strict');
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error' && /Content Security Policy|violates.*directive|Refused to/i.test(message.text())) errors.push(message.text()); });
     await page.goto(process.argv[2]);
+    if (process.argv[4] === '--thresholds') {
+      assert.equal(await page.locator('#start').isEnabled(), false);
+      await page.fill('#size', '5');
+      await page.fill('#days', '180');
+      await page.check('#manual');
+      assert.equal(await page.locator('#start').isEnabled(), true);
+      await page.fill('#days', '-1');
+      assert.equal(await page.locator('#manual').isChecked(), false);
+      assert.equal(await page.locator('#start').isEnabled(), false);
+      await page.fill('#days', '180');
+      await page.check('#manual');
+      await page.screenshot({path: path.join(process.argv[3], 'thresholds-desktop.png')});
+      assert.deepEqual(errors, []);
+      await page.click('#start');
+      await page.waitForFunction(() => document.querySelector('#finish').textContent.includes('Thresholds confirmed'));
+      console.log('Manual thresholds, edit invalidation and analysis confirmation passed.');
+      return;
+    }
     await page.locator('#rows tr').first().waitFor();
     assert.equal(await page.locator('#confirm').isEnabled(), false);
     assert.equal(await page.locator('#rows input:checked').count(), 0);

@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from src.auditor import GitLargeObjectAuditor
-from src.html_review import ReviewSession, historical_presence, review_in_browser, review_payload
+from src.html_review import ReviewSession, confirm_thresholds, historical_presence, review_in_browser, review_payload
 from src.models import CleanupAction
 from src.rewriter import CleanupError, GitHistoryRewriter
 
@@ -82,6 +82,51 @@ class BrowserReviewTests(unittest.TestCase):
         self.assertEqual(row["last_change"], "2020-01-03T12:00:00+00:00")
         self.assertEqual(row["suffixes"], [".bin", ".zip"])
         self.assertEqual(row["size"], len(b"old payload" * 100))
+
+    def test_thresholds_require_manual_confirmation_and_valid_numbers(self):
+        session = ReviewSession({"mode": "thresholds", "repository": str(self.repo),
+                                 "min_size_mb": 100, "min_age_days": 180,
+                                 "as_of": "2026-10-20T00:00:00+00:00"})
+        session.start()
+        self.addCleanup(session.close)
+        for size, days, word in ((5, 90, ""), (0, 90, "THRESHOLDS"),
+                                  (True, 90, "THRESHOLDS"), (5, -1, "THRESHOLDS"),
+                                  (5, 1.5, "THRESHOLDS"), (5, True, "THRESHOLDS"),
+                                  (float("inf"), 90, "THRESHOLDS"), (5, 365001, "THRESHOLDS")):
+            self.assertEqual(self.post(session, {"min_size_mb": size, "min_age_days": days,
+                                                "confirmation": word}), 400)
+        self.assertFalse(session.done.is_set())
+        self.assertEqual(self.post(session, {"min_size_mb": 5.5, "min_age_days": 90,
+                                            "confirmation": "THRESHOLDS"}), 200)
+        self.assertEqual(session.selected, {"min_size_mb": 5.5, "min_age_days": 90})
+
+    def test_terminal_threshold_cancel_and_explicit_scan_confirmation(self):
+        options = replace(self.options, review_html=False)
+        self.assertIsNone(confirm_thresholds(options, emit=lambda _: None,
+                                            prompt=lambda _: (_ for _ in ()).throw(EOFError())))
+        for token, expected in (("", None), ("SCAN", {"min_size_mb": 6.5, "min_age_days": 30})):
+            answers = iter(["6.5", "30", token])
+            self.assertEqual(confirm_thresholds(options, emit=lambda _: None,
+                                               prompt=lambda _: next(answers)), expected)
+
+    def test_cli_cancelled_thresholds_never_scan_and_confirmed_values_reach_auditor(self):
+        import git_history_auditor
+        with patch("src.html_review.confirm_thresholds", return_value=None), \
+                patch.object(GitLargeObjectAuditor, "run") as scan:
+            self.assertEqual(git_history_auditor.main(["--repo", str(self.repo)]), 0)
+            scan.assert_not_called()
+        observed = []
+        original = GitLargeObjectAuditor.run
+        def run(auditor):
+            observed.append((auditor.options.min_size_mb, auditor.options.min_age_days))
+            return original(auditor)
+        with patch("src.html_review.confirm_thresholds", return_value={"min_size_mb": .001, "min_age_days": 30}), \
+                patch.object(GitLargeObjectAuditor, "run", run), \
+                patch("src.html_review.review_in_browser") as review:
+            self.assertEqual(git_history_auditor.main(["--repo", str(self.repo),
+                             "--output-dir", str(self.root / "cli-reports")]), 0)
+            review.assert_called_once()
+        self.assertEqual(observed, [(.001, 30)])
 
     def test_unknown_protected_duplicate_and_wrong_token_are_rejected(self):
         session = self.session()
