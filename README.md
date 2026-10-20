@@ -94,7 +94,11 @@ See [Git/Gerrit coverage and recovery](skills/git-history-toolkit/references/git
 
 ## Browser Confirmation
 
-Every CLI audit opens a Python-served local HTML review after analysis by default:
+Every CLI audit opens a Python-served local HTML threshold confirmation by default.
+After confirmation, that page shows live stages, elapsed time and history-search
+counts, then switches to object review in the same tab. Percentages apply to the
+current stage; stages with unknown totals show an indeterminate progress bar.
+The subsequent object-review timeout starts after analysis completes.
 
 ```powershell
 python .\git_history_toolkit.py audit --repo C:\repos\application --output-dir C:\audit\application

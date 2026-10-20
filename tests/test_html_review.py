@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -108,6 +109,77 @@ class BrowserReviewTests(unittest.TestCase):
             answers = iter(["6.5", "30", token])
             self.assertEqual(confirm_thresholds(options, emit=lambda _: None,
                                                prompt=lambda _: next(answers)), expected)
+
+    def get_progress(self, session, path=None, host=None):
+        connection = http.client.HTTPConnection("127.0.0.1", session.server.server_port, timeout=5)
+        connection.request("GET", path or "/progress/" + session.token,
+                           headers={"Host": host or session.origin.removeprefix("http://")})
+        response = connection.getresponse()
+        value = json.loads(response.read())
+        status = response.status
+        connection.close()
+        return status, value
+
+    def test_progress_survives_confirmation_and_handoff_requires_new_review_consent(self):
+        session = ReviewSession({"mode": "thresholds", "repository": str(self.repo)})
+        session.start()
+        self.addCleanup(session.close)
+        self.assertEqual(self.get_progress(session)[1]["state"], "waiting")
+        threshold_body = {"min_size_mb": .0001, "min_age_days": 0, "confirmation": "THRESHOLDS"}
+        self.assertEqual(self.post(session, threshold_body), 200)
+        self.assertEqual(self.post(session, threshold_body), 409)
+        session.update_progress("Object history", 2, 8, "Searching history")
+        status, value = self.get_progress(session)
+        self.assertEqual(status, 200)
+        self.assertEqual((value["state"], value["completed"], value["total"]), ("running", 2, 8))
+        self.assertGreaterEqual(value["elapsed_seconds"], 0)
+        self.assertEqual(self.get_progress(session, host="untrusted.invalid")[0], 404)
+        self.assertEqual(self.get_progress(session, path="/progress/invalid")[0], 404)
+        old_digest = session.digest
+        session.show_review(review_payload(self.result, self.options, "cleanup"))
+        self.assertEqual(self.get_progress(session)[1]["state"], "ready")
+        self.assertNotEqual(old_digest, session.digest)
+        self.assertFalse(session.done.is_set())
+        self.assertIsNone(session.selected)
+        self.assertEqual(self.post(session, threshold_body), 400)
+        self.assertEqual(self.post(session, {"selected": [self.old.sha], "confirmation": "REVIEW"}), 400)
+        self.assertEqual(self.post(session, {"selected": [self.old.sha], "confirmation": "CLEANUP"}), 200)
+
+    def test_real_history_reports_counts_and_failure_is_visible_without_approval(self):
+        events = []
+        self.auditor.progress = lambda stage, completed=None, total=None, detail="": events.append(
+            (stage, completed, total))
+        result = self.auditor.run()
+        review_payload(result, self.options, "review", self.auditor.progress)
+        history = [event for event in events if event[0] == "Object history"]
+        self.assertEqual(history[0][1:], (0, len(result.blobs)))
+        self.assertEqual(history[-1][1:], (len(result.blobs), len(result.blobs)))
+        snapshots = [event for event in events if event[0] == "Historical snapshots"]
+        self.assertTrue(snapshots)
+        self.assertTrue(all(0 <= done <= total for _, done, total in snapshots))
+        events.clear()
+        historical_presence(self.auditor.runner, [self.keep], self.auditor.progress)
+        self.assertEqual(events[-1][1:], (1, 3))
+        session = self.session("review")
+        worker = threading.Thread(target=session.finish_progress, kwargs={"error": "Git scan failed"})
+        worker.start()
+        status, value = self.get_progress(session)
+        worker.join(timeout=3)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual((status, value["state"], value["detail"]), (200, "failed", "Git scan failed"))
+        self.assertIsNone(session.selected)
+
+    def test_cancelled_persistent_threshold_session_is_closed_without_scanning(self):
+        observed = []
+        def cancel(session, options, emit, **kwargs):
+            session.start()
+            observed.append(session)
+            self.assertFalse(kwargs["close"])
+            self.assertEqual(self.post(session, {"cancel": True}), 200)
+            return None
+        with patch("src.html_review._await_browser", side_effect=cancel):
+            self.assertIsNone(confirm_thresholds(self.options, emit=lambda _: None, keep_open=True))
+        self.assertFalse(observed[0].thread.is_alive())
 
     def test_cli_cancelled_thresholds_never_scan_and_confirmed_values_reach_auditor(self):
         import git_history_auditor

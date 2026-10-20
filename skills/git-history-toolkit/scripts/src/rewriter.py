@@ -59,11 +59,13 @@ class GitHistoryRewriter:
         options: AuditorOptions,
         confirm: Callable[[str], str] = input,
         emit: Callable[[str], None] = print,
+        progress_session=None,
     ) -> None:
         self.runner = runner
         self.options = options
         self.confirm = confirm
         self.emit = emit
+        self.progress_session = progress_session
         self._push_branch: str | None = None
         self._push_lease_oid: str | None = None
         self._push_url: str | None = None
@@ -90,7 +92,8 @@ class GitHistoryRewriter:
         self.emit(f"Backup destination: {result.output_dir / 'before_cleanup.bundle'}")
         if self.options.review_html:
             from .html_review import review_in_browser
-            selected = review_in_browser(result, self.options, mode="cleanup", emit=self.emit)
+            selected = review_in_browser(result, self.options, mode="cleanup", emit=self.emit,
+                                         progress_session=self.progress_session)
             allowed = {blob.sha for blob in clean_candidates}
             if selected and (len(selected) != len(set(selected)) or not set(selected) <= allowed):
                 raise CleanupError("Browser selection contains ineligible or unknown objects")

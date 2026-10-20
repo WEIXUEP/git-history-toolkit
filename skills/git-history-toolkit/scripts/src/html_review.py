@@ -10,22 +10,28 @@ import math
 from pathlib import Path, PurePosixPath
 import secrets
 import threading
+import time
 import webbrowser
 
 from .git_runner import GitRunner
 from .models import CleanupAction
 
 
-def historical_presence(runner, blobs):
+def historical_presence(runner, blobs, progress=None):
     """Find the latest committer timestamp of a snapshot containing each blob."""
     remaining = {blob.sha for blob in blobs}
     found = {}
     if not remaining:
         return found
     commits = [line.split() for line in runner.run("log", "--all", "HEAD", "--format=%ct %H").splitlines()]
-    for stamp, commit in sorted(commits, key=lambda row: (int(row[0]), row[1]), reverse=True):
+    total = len(commits)
+    processed = 0
+    for index, (stamp, commit) in enumerate(sorted(commits, key=lambda row: (int(row[0]), row[1]), reverse=True)):
         if not remaining:
             break
+        if progress:
+            progress("Historical snapshots", index, total,
+                     f"{len(found)} / {len(blobs)} object timestamps found")
         present = set()
         for record in runner.run("ls-tree", "-r", "-z", "--full-tree", commit).split("\0"):
             header = record.partition("\t")[0].split()
@@ -34,10 +40,16 @@ def historical_presence(runner, blobs):
         for sha in present:
             found[sha] = {"time": datetime.fromtimestamp(int(stamp), timezone.utc).isoformat(), "commit": commit}
         remaining.difference_update(present)
+        processed += 1
+    if progress:
+        progress("Historical snapshots", processed, total,
+                 f"{len(found)} / {len(blobs)} object timestamps found; search complete")
     return found
 
 
-def review_payload(result, options, mode):
+def review_payload(result, options, mode, progress=None):
+    if progress:
+        progress("Preparing object review", detail="Checking refs and cached historical timestamps")
     runner = GitRunner(result.repository)
     if runner.ref_state() != result.ref_state:
         raise ValueError("Audit refs changed; run a fresh audit before browser review")
@@ -54,13 +66,15 @@ def review_payload(result, options, mode):
             else:
                 presence[blob.sha] = value
         if missing:
-            calculated = historical_presence(CachedGitRunner(runner, cache, result.ref_state), missing)
+            calculated = historical_presence(CachedGitRunner(runner, cache, result.ref_state), missing, progress)
             presence.update(calculated)
             if runner.ref_state() != result.ref_state:
                 raise ValueError("Refs changed while calculating historical presence")
             for sha, value in calculated.items():
                 cache.put("presence", [key, sha], value)
         info = cache.info()
+        if progress:
+            progress("Preparing object review", detail=f"Historical timestamps ready; cache hits: {info.get('hits', 0)}")
         (result.output_dir / "presence-cache-events.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     finally:
         cache.close()
@@ -102,11 +116,40 @@ class ReviewSession:
         self.done = threading.Event()
         self.lock = threading.Lock()
         self.selected = None
+        self.started = False
+        self.progress_started = None
+        self.progress_seen = threading.Event()
+        self.progress_state = {"state": "waiting", "stage": "Waiting for threshold confirmation",
+                               "completed": None, "total": None, "detail": ""}
         self.allowed = {row["sha"] for row in payload.get("rows", []) if row["eligible"]}
         self.digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         self.server = LocalReviewHTTPServer(("127.0.0.1", 0), self._handler())
         self.origin = f"http://127.0.0.1:{self.server.server_port}"
         self.url = f"{self.origin}/review/{self.token}"
+
+    def update_progress(self, stage, completed=None, total=None, detail=""):
+        with self.lock:
+            if self.progress_started is None:
+                self.progress_started = time.monotonic()
+            self.progress_state = {"state": "running", "stage": stage,
+                                   "completed": completed, "total": total, "detail": detail}
+
+    def finish_progress(self, error=None):
+        with self.lock:
+            self.progress_state = dict(self.progress_state, state="failed" if error else "completed",
+                                       detail=str(error) if error else "Analysis completed.")
+            self.progress_seen.clear()
+        # Let the open page receive the terminal state before closing its server.
+        self.progress_seen.wait(2)
+
+    def show_review(self, payload):
+        with self.lock:
+            self.payload = payload
+            self.allowed = {row["sha"] for row in payload.get("rows", []) if row["eligible"]}
+            self.digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            self.selected = None
+            self.done.clear()
+            self.progress_state = dict(self.progress_state, state="ready")
 
     def _handler(self):
         session = self
@@ -132,12 +175,22 @@ class ReviewSession:
                 return self.headers.get("Host") == session.origin.removeprefix("http://")
 
             def do_GET(self):
+                if self.valid_host() and self.path == f"/progress/{session.token}":
+                    with session.lock:
+                        state = dict(session.progress_state, elapsed_seconds=round(
+                            time.monotonic() - session.progress_started, 1) if session.progress_started else 0)
+                        if state["state"] in ("failed", "completed"):
+                            session.progress_seen.set()
+                    self.reply(200, json.dumps(state).encode())
+                    return
                 if not self.valid_host() or self.path != f"/review/{session.token}":
                     self.reply(404, b'{}')
                     return
-                data = dict(session.payload, token=session.token, digest=session.digest)
+                with session.lock:
+                    data = dict(session.payload, token=session.token, digest=session.digest,
+                                progress_state=session.progress_state["state"])
                 encoded = json.dumps(data, ensure_ascii=True).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-                template_name = "thresholds.html" if session.payload["mode"] == "thresholds" else "review.html"
+                template_name = "thresholds.html" if data["mode"] == "thresholds" else "review.html"
                 template = Path(__file__).with_name(template_name).read_text(encoding="utf-8")
                 page = template.replace("__NONCE__", session.nonce).replace("__DATA__", encoded)
                 self.reply(200, page.encode("utf-8"), "text/html; charset=utf-8")
@@ -185,12 +238,19 @@ class ReviewSession:
                         self.reply(409, b'{"error":"Review already finished"}')
                         return
                     session.selected = chosen
+                    if session.payload["mode"] == "thresholds" and chosen is not None:
+                        session.progress_started = time.monotonic()
+                        session.progress_state["state"] = "running"
+                        session.progress_state["stage"] = "Starting analysis"
                     session.done.set()
                 self.reply(200, b'{"ok":true}')
 
         return Handler
 
     def start(self):
+        if self.started:
+            return
+        self.started = True
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
         self.thread.start()
 
@@ -200,12 +260,12 @@ class ReviewSession:
         self.thread.join(timeout=5)
 
 
-def _await_browser(session, options, emit):
+def _await_browser(session, options, emit, close=True, open_browser=True):
     session.start()
     emit(f"Browser review ({session.payload['mode']}): {session.url}")
     emit("Closing the tab is not approval. Use Cancel or wait for timeout.")
     try:
-        if not options.no_open_browser:
+        if open_browser and not options.no_open_browser:
             try:
                 if not webbrowser.open(session.url):
                     emit("No browser opened; open the local URL on this machine, or use terminal mode.")
@@ -222,17 +282,29 @@ def _await_browser(session, options, emit):
             session.done.set()
         emit("Browser review cancelled.")
     finally:
-        session.close()
+        if close:
+            session.close()
     return session.selected
 
 
-def confirm_thresholds(options, emit=print, prompt=input):
+def confirm_thresholds(options, emit=print, prompt=input, keep_open=False):
     """Require a manual parameter decision before scanning; never approve cleanup."""
     if options.review_html:
         payload = {"mode": "thresholds", "repository": str(options.repo),
                    "min_size_mb": options.min_size_mb, "min_age_days": options.min_age_days,
-                   "as_of": datetime.now(timezone.utc).isoformat()}
-        return _await_browser(ReviewSession(payload), options, emit)
+                   "as_of": datetime.now(timezone.utc).isoformat(), "live_progress": keep_open}
+        session = ReviewSession(payload)
+        try:
+            selected = _await_browser(session, options, emit, close=not keep_open)
+        except BaseException:
+            if keep_open:
+                session.close()
+            raise
+        if keep_open:
+            if selected:
+                return dict(selected, _session=session)
+            session.close()
+        return selected
     emit("Confirm audit thresholds. Age is since the last history reference change (including deletion), not filesystem mtime.")
     try:
         size = float(prompt(f"Minimum size in MiB [{options.min_size_mb}]: ").strip() or options.min_size_mb)
@@ -247,9 +319,13 @@ def confirm_thresholds(options, emit=print, prompt=input):
         return None
 
 
-def review_in_browser(result, options, mode="review", emit=print):
-    session = ReviewSession(review_payload(result, options, mode))
-    _await_browser(session, options, emit)
+def review_in_browser(result, options, mode="review", emit=print, progress_session=None):
+    payload = review_payload(result, options, mode,
+                             progress_session.update_progress if progress_session else None)
+    session = progress_session or ReviewSession(payload)
+    if progress_session:
+        session.show_review(payload)
+    _await_browser(session, options, emit, close=not bool(progress_session), open_browser=not bool(progress_session))
     receipt = {"mode": mode, "status": "confirmed" if session.selected else "cancelled",
                "repository": str(result.repository), "plan_digest": session.digest,
                "ref_state": result.ref_state, "selected": session.selected or [],

@@ -27,8 +27,10 @@ class GitLargeObjectAuditor:
     def __init__(self, args) -> None:
         self.options = AuditorOptions.from_args(args)
         self.runner = GitRunner(self.options.repo)
+        self.progress = lambda *args, **kwargs: None
 
     def run(self) -> AuditResult:
+        self.progress("Repository inspection", detail="Validating repository and incremental cache")
         from .audit_cache import AuditCache, CachedGitRunner
         root = RepositoryInspector(self.runner).validate()
         self.runner.repo = root
@@ -54,8 +56,10 @@ class GitLargeObjectAuditor:
         if root != self.options.repo:
             LOGGER.info("Using Git worktree root: %s", root)
 
+        self.progress("Repository inspection", detail="Reading object statistics and refs")
         stats = repository.collect_stats()
         refs = RefAnalyzer(self.runner).list_refs()
+        self.progress("Protected current trees", detail=f"Checking {len(refs)} refs")
         current_usage, current_paths, coverage = CurrentTreeAnalyzer(self.runner).collect(
             refs,
             protect_head=self.options.protect_head,
@@ -65,6 +69,7 @@ class GitLargeObjectAuditor:
         )
 
         LOGGER.info("Scanning reachable Git objects and filtering large blobs")
+        self.progress("Reachable objects", detail="Enumerating object sizes and historical paths; reusing valid cache entries")
         path_policy = PathPolicy(self.options)
         blobs = [
             blob
@@ -76,12 +81,13 @@ class GitLargeObjectAuditor:
 
         gerrit_refs = [ref for ref in refs if ref.kind == "gerrit"]
         if self.options.scan_gerrit_refs:
-            GerritAnalyzer(self.runner).analyze(refs, blob_map, coverage)
+            GerritAnalyzer(self.runner, self.progress).analyze(refs, blob_map, coverage)
         else:
             coverage.warnings.append("Gerrit ref scanning was disabled by command-line option.")
 
         LOGGER.info("Analyzing history for %d large blobs", len(blobs))
-        HistoryAnalyzer(self.runner).analyze(blobs, refs, gerrit_refs if self.options.scan_gerrit_refs else [])
+        HistoryAnalyzer(self.runner, self.progress).analyze(blobs, refs, gerrit_refs if self.options.scan_gerrit_refs else [])
+        self.progress("Classification and reports", detail=f"{len(blobs)} large objects; inventory: {cache.info().get('mode')}")
         BlobClassifier(self.options, audit_time).classify(blobs)
 
         output_dir = self._new_output_dir(root.name, audit_time)
@@ -102,6 +108,7 @@ class GitLargeObjectAuditor:
             cache_info=cache.info(),
         )
         result.report_files = AuditReporter().write(result)
+        self.progress("Audit reports ready", detail=f"{len(blobs)} large objects; preparing historical timestamps")
         return result
 
     @staticmethod

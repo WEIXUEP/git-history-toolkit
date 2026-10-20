@@ -12,8 +12,9 @@ keeps the proposed minimum size (MiB) and age (whole days), checks the manual
 confirmation box and chooses Confirm and analyze. Editing a value clears
 that checkbox. CLI flags only prefill the fields; they do not bypass approval.
 No scan runs on cancellation or timeout. Threshold approval never authorizes
-cleanup. Never fill or submit it on behalf of the user. The second HTML page
-opens after analysis for object selection and REVIEW/CLEANUP confirmation.
+cleanup. Never fill or submit it on behalf of the user. After confirmation,
+the same page displays live analysis progress and then switches to object
+selection and REVIEW/CLEANUP confirmation in the same tab.
 In terminal-only mode the user enters size and days and confirms with SCAN.
 
 ```powershell
@@ -33,8 +34,19 @@ timestamps have different meanings:
   the audit. This is the existing cleanup age-policy time, not presence time.
 
 Unknown times are shown explicitly. Unfetched remote commits cannot contribute.
-Presence calculation scans historical trees only when HTML review is requested;
-on long histories this adds work before the URL becomes available.
+Presence calculation scans historical trees only when HTML review is requested.
+The page stays live during that work: stages include repository inspection,
+protected trees, reachable objects, Gerrit patch sets, object history, reports
+and historical snapshots. History searches show processed/total objects;
+snapshot searches show inspected/total snapshots and timestamps found. A
+snapshot search can finish before inspecting every commit once all required
+timestamps are found. Percentages describe the current stage, not the entire
+audit. Unknown totals use an indeterminate bar. Elapsed time includes all
+analysis stages. Cached reads retain the same progress flow and may finish
+quickly. Reloading during a scan resumes progress without approving again.
+Scan failures appear on the page; consult the terminal and rerun. Progress
+polls never authorize cleanup or push. After CLEANUP submission, the terminal
+reports the actual rewrite/backup outcome; the analysis bar does not track it.
 
 Filter by suffix or status, search paths/SHA, sort by size/date/path, select
 filtered eligible objects, or clear the selection. Nothing starts selected.
@@ -77,7 +89,9 @@ Browser cleanup approval never authorizes remote replacement or subtree work.
 
 - Cancel, Ctrl+C, no selection and timeout never authorize cleanup. Closing a
   browser tab is not approval; the default timeout is 600 seconds.
-- Set --review-timeout from 1 to 3600 seconds. Use --no-open-browser to print
+- Set --review-timeout from 1 to 3600 seconds for each manual decision;
+  scan time does not consume the subsequent object-review timeout.
+  Use --no-open-browser to print
   the URL without launching a browser. Copying the exact URL is necessary
   because it contains a temporary session token; keep it private.
 - On a remote/SSH host, the URL belongs to that host. Use an explicitly arranged
@@ -93,8 +107,11 @@ Browser cleanup approval never authorizes remote replacement or subtree work.
 
 The service validates its exact loopback host, origin, session token, payload
 digest and allowed IDs. Decisions are single-use, requests are size-limited,
-and all path data is rendered as text. The server stops after a decision or
-timeout. Do not treat saved HTML or a crafted HTTP request as user consent.
+and all path data is rendered as text. The server stays open between threshold
+approval and object review, then stops when the command finishes or a manual
+decision times out. A new payload digest and independent decision are required
+for object review. Do not treat saved HTML, progress or a crafted HTTP request
+as user consent.
 
 Developer-only visual smoke test: with Playwright and its browser installed,
 run `node tests/browser_review_smoke.cjs <read-only-review-URL> <screenshot-directory>`
@@ -105,3 +122,9 @@ a review-only selection instead. Node/Playwright are not runtime dependencies
 of the skill.
 Use --thresholds against the initial parameter URL to test parameter editing
 and confirm an approved disposable read-only scan before testing its result URL.
+
+For the complete progress flow, run
+`node tests/browser_progress_smoke.cjs <python-executable> <screenshot-directory>`.
+This creates disposable repositories, confirms only their read-only analysis,
+checks live counts, page reload, same-tab navigation and failure display, and
+cancels object review. No production repository or cleanup approval is used.

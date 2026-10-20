@@ -23,27 +23,42 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s: %(message)s",
     )
 
+    progress_session = None
     try:
         auditor = GitLargeObjectAuditor(args)
         from src.html_review import confirm_thresholds
         from src.repository import RepositoryInspector
         args.repo = str(RepositoryInspector(auditor.runner).validate())
         auditor = GitLargeObjectAuditor(args)
-        thresholds = confirm_thresholds(auditor.options)
+        thresholds = confirm_thresholds(auditor.options, keep_open=args.review_html)
         if thresholds is None:
             print("Threshold confirmation cancelled; analysis and cleanup were not started.")
             return 0
         args.min_size_mb = thresholds["min_size_mb"]
         args.min_age_days = thresholds["min_age_days"]
+        progress_session = thresholds.get("_session")
         auditor = GitLargeObjectAuditor(args)
+        if progress_session:
+            auditor.progress = progress_session.update_progress
         result = auditor.run()
         if args.execute_cleanup:
-            GitHistoryRewriter(auditor.runner, auditor.options).execute(result)
+            GitHistoryRewriter(auditor.runner, auditor.options, progress_session=progress_session).execute(result)
         elif args.review_html:
             from src.html_review import review_in_browser
-            review_in_browser(result, auditor.options)
+            review_in_browser(result, auditor.options, progress_session=progress_session)
     except (ValueError, OSError, RepositoryError, GitCommandError, CleanupError) as exc:
+        if progress_session:
+            progress_session.finish_progress(error=exc)
         parser.error(str(exc))
+    except BaseException as exc:
+        if progress_session:
+            progress_session.finish_progress(error=str(exc) or "Analysis interrupted. Restart from the terminal.")
+        raise
+    finally:
+        if progress_session:
+            if progress_session.progress_state["state"] == "running":
+                progress_session.finish_progress()
+            progress_session.close()
 
     print(f"Audit completed: {result.output_dir}")
     print(f"Large blobs: {len(result.blobs)}")

@@ -12,8 +12,9 @@ LOG_FORMAT = "%H%x00%ct%x00%s"
 
 
 class HistoryAnalyzer:
-    def __init__(self, runner: GitRunner) -> None:
+    def __init__(self, runner: GitRunner, progress=None) -> None:
         self.runner = runner
+        self.progress = progress or (lambda *args, **kwargs: None)
 
     def analyze(
         self,
@@ -26,7 +27,9 @@ class HistoryAnalyzer:
             branch_revisions = ["HEAD"]
         gerrit_revisions = [ref.name for ref in gerrit_refs]
 
-        for blob in blobs:
+        self.progress("Object history", 0, len(blobs), "Searching additions, replacements and deletions")
+        for index, blob in enumerate(blobs):
+            self.progress("Object history", index, len(blobs), f"Searching object {blob.sha[:12]}")
             branch_history = self._find(blob.sha, branch_revisions)
             gerrit_history = self._find(blob.sha, gerrit_revisions) if gerrit_revisions else []
             history = self._merge(branch_history, gerrit_history)
@@ -38,6 +41,7 @@ class HistoryAnalyzer:
             blob.commit_count = history.commit_count
             blob.branch_last_seen = self._latest(branch_history)
             blob.gerrit_last_seen = self._latest(gerrit_history)
+            self.progress("Object history", index + 1, len(blobs), f"Searched object {blob.sha[:12]}")
 
     def _find(self, sha: str, revisions: list[str]) -> list[tuple[str, datetime, str]]:
         if not revisions:

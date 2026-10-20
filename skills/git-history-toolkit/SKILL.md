@@ -25,6 +25,10 @@ uses the module. Check the required command before proposing execution.
   history reference change, including addition/replacement/deletion, not
   filesystem mtime or latest containing snapshot. Never fill or submit the
   threshold page for the user. Cancel/timeout means no scan and no cleanup.
+  After confirmation, keep the HTML page open for live analysis progress:
+  stage, processed/total counts when known, and elapsed time. History and
+  historical-snapshot searches report real counts; unknown totals remain
+  indeterminate. The same tab switches to object review when ready.
   Analysis must end with the default HTML review for manual suffix-based
   selection, readable sizes and exact historical presence times. Read
   [references/browser-review.md](references/browser-review.md). Open the page

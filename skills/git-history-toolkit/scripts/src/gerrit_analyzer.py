@@ -12,8 +12,9 @@ CHANGE_REF_PATTERN = re.compile(r"^refs/changes/\d{2}/(?P<change>\d+)/(?P<patchs
 
 
 class GerritAnalyzer:
-    def __init__(self, runner: GitRunner) -> None:
+    def __init__(self, runner: GitRunner, progress=None) -> None:
         self.runner = runner
+        self.progress = progress or (lambda *args, **kwargs: None)
 
     def analyze(
         self, refs: list[RefInfo], blobs: dict[str, BlobInfo], coverage: ScanCoverage
@@ -29,7 +30,9 @@ class GerritAnalyzer:
             return
 
         coverage.gerrit_refs = True
-        for ref in gerrit_refs:
+        self.progress("Gerrit patch sets", 0, len(gerrit_refs))
+        for index, ref in enumerate(gerrit_refs):
+            self.progress("Gerrit patch sets", index, len(gerrit_refs), ref.name)
             match = CHANGE_REF_PATTERN.match(ref.name)
             if not match:
                 continue
@@ -45,3 +48,4 @@ class GerritAnalyzer:
                 blob.gerrit_patchsets.add(patchset)
                 if path:
                     blob.paths.add(path)
+            self.progress("Gerrit patch sets", index + 1, len(gerrit_refs), ref.name)

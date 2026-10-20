@@ -4,14 +4,15 @@
 <style nonce="__NONCE__">
 :root{font-family:"Segoe UI",Arial,sans-serif;color:#24292f;background:#f6f8fa;font-size:14px;letter-spacing:0}*{box-sizing:border-box}body{margin:0}header{padding:24px 32px;background:white;border-bottom:1px solid #d8dee4}header strong{font-size:20px}#repo{margin-top:9px;color:#57606a;overflow-wrap:anywhere}main{max-width:860px;margin:40px auto;padding:0 32px}h1{font-size:24px;margin:0 0 24px}form{background:white;border:1px solid #d8dee4;border-radius:5px;padding:28px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:28px}label{font-weight:600;display:block;margin-bottom:10px}.input{display:flex;align-items:center;gap:12px}input[type=number]{width:100%;min-width:0;font-size:22px;font-variant-numeric:tabular-nums;border:1px solid #afb8c1;border-radius:4px;padding:12px;color:inherit}small{display:block;color:#57606a;line-height:1.7;margin-top:12px}.cutoff{padding:18px 0;margin:24px 0;border-top:1px solid #d8dee4;border-bottom:1px solid #d8dee4;color:#57606a;line-height:1.7}#cutoff{font-weight:600;color:#24292f}#manual{width:17px;height:17px;margin:0;accent-color:#0969da}.check{display:flex;align-items:center;gap:9px;font-weight:400;margin:0}.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:26px}button{font:inherit;font-weight:600;border:1px solid #afb8c1;background:white;border-radius:5px;padding:10px 18px;cursor:pointer}button.primary{background:#1a7f37;border-color:#1a7f37;color:white}button:disabled{opacity:.45;cursor:default}input:focus-visible,button:focus-visible{outline:3px solid #80b8f3;outline-offset:2px}#message{margin-top:16px;color:#cf222e;line-height:1.7}#finish{display:none;margin:0 0 24px;padding:18px;background:#eaf6ed;color:#116329;border:1px solid #b4d7bd;border-radius:4px}
 .input span{white-space:nowrap}
+#processing{margin-top:28px;padding:24px 0;border-top:1px solid #d8dee4}#processing[hidden],#progress[hidden]{display:none}.progress-heading{display:flex;justify-content:space-between;align-items:center;gap:20px}#stage{font-size:18px;margin:0}#elapsed{color:#57606a;font-variant-numeric:tabular-nums;white-space:nowrap}progress{display:block;width:100%;height:14px;margin:18px 0;accent-color:#0969da}#counts{font-variant-numeric:tabular-nums;font-weight:600}#detail{color:#57606a;margin-top:10px;overflow-wrap:anywhere;line-height:1.6}#processing.failed{border-top-color:#cf222e}#processing.failed #stage{color:#cf222e}#finish.failed{background:#fff1f0;color:#a40e26;border-color:#ffb4aa}
 </style></head><body>
 <header><strong>Git History Toolkit</strong><div id="repo"></div></header>
-<main><h1>Confirm audit thresholds</h1><div id="finish" role="status"></div><form id="form">
+<main><h1 id="heading">Confirm audit thresholds</h1><div id="finish" role="status"></div><form id="form">
 <div class="fields"><div><label for="size">Minimum file size</label><div class="input"><input id="size" type="number" min="0" step="any" required><span>MiB</span></div><small>Raw Git object size. 1 MiB = 1,048,576 bytes.</small></div><div><label for="days">Last history change at least</label><div class="input"><input id="days" type="number" min="0" max="365000" step="1" required><span>days ago</span></div><small>Since the last addition, replacement or deletion in local Git history. Not filesystem modification time.</small></div></div>
 <div class="cutoff">History change cutoff (UTC)<br><span id="cutoff"></span><br>Current and protected objects remain excluded from cleanup.</div>
 <label class="check"><input id="manual" type="checkbox">I confirm these size and age thresholds.</label>
 <div class="actions"><button type="button" id="cancel">Cancel</button><button type="submit" class="primary" id="start" disabled>Confirm and analyze</button></div><div id="message" role="alert"></div>
-</form></main>
+</form><section id="processing" aria-label="Analysis progress" hidden><div class="progress-heading"><h2 id="stage">Starting analysis</h2><span id="elapsed">0s elapsed</span></div><progress id="progress" aria-label="Current stage progress"></progress><div id="counts" role="status"></div><div id="detail"></div></section></main>
 <script nonce="__NONCE__" id="data" type="application/json">__DATA__</script>
 <script nonce="__NONCE__">
 'use strict';const data=JSON.parse(document.getElementById('data').textContent),$=id=>document.getElementById(id);let done=false;
@@ -19,6 +20,52 @@ $('repo').textContent=data.repository;$('size').value=data.min_size_mb;$('days')
 function valid(){return Number.isFinite($('size').valueAsNumber*1048576)&&$('size').valueAsNumber>0&&Number.isInteger($('days').valueAsNumber)&&$('days').valueAsNumber>=0&&$('days').valueAsNumber<=365000}
 function update(){const cutoff=new Date(new Date(data.as_of).getTime()-$('days').valueAsNumber*86400000);$('cutoff').textContent=valid()?cutoff.toISOString().replace('T',' ').slice(0,19):'Enter a positive size and whole days from 0 to 365000.';$('start').disabled=done||!valid()||!$('manual').checked}
 for(const id of ['size','days'])$(id).addEventListener('input',()=>{$('manual').checked=false;update()});$('manual').addEventListener('change',update);
-async function submit(cancel){if(done)return;$('start').disabled=true;$('cancel').disabled=true;$('message').textContent='';try{const response=await fetch(`/decision/${data.token}`,{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':data.token},body:JSON.stringify({digest:data.digest,cancel,confirmation:$('manual').checked?'THRESHOLDS':'',min_size_mb:$('size').valueAsNumber,min_age_days:$('days').valueAsNumber})});if(!response.ok)throw new Error('Threshold confirmation was not accepted.');done=true;for(const el of document.querySelectorAll('input,button'))el.disabled=true;$('finish').style.display='block';$('finish').textContent=cancel?'Cancelled. Analysis was not started.':'Thresholds confirmed. Analysis is running; the object review opens next.'}catch(error){$('message').textContent=error.message+' If this session expired, start again from the terminal.';$('cancel').disabled=false;update()}}
+function processing(){
+  done=true;
+  for(const el of document.querySelectorAll('input,button'))el.disabled=true;
+  $('form').hidden=true;
+  $('heading').textContent='Analyzing Git history';
+  $('finish').style.display='block';
+  $('finish').textContent='Thresholds confirmed. Analysis is running.';
+  $('processing').hidden=false;
+  poll();
+}
+async function poll(){
+  try{
+    const response=await fetch(`/progress/${data.token}`,{cache:'no-store'});
+    if(!response.ok)throw new Error('Progress unavailable');
+    const p=await response.json();
+    if(p.state==='ready'){location.reload();return}
+    $('stage').textContent=p.state==='failed'?'Analysis failed':p.stage;
+    $('elapsed').textContent=`${Math.floor(p.elapsed_seconds)}s elapsed`;
+    $('detail').textContent=p.detail;
+    const known=Number.isInteger(p.total)&&p.total>0&&Number.isInteger(p.completed);
+    if(known){
+      $('progress').max=p.total;
+      $('progress').value=p.completed;
+      $('counts').textContent=`${p.completed.toLocaleString()} / ${p.total.toLocaleString()} (${Math.floor(p.completed/p.total*100)}%)`;
+    }else{
+      $('progress').removeAttribute('value');
+      $('counts').textContent='Working...';
+    }
+    if(p.state==='failed'||p.state==='completed'){
+      const failed=p.state==='failed';
+      $('processing').classList.toggle('failed',failed);
+      $('finish').classList.toggle('failed',failed);
+      $('progress').hidden=true;
+      $('counts').textContent=failed?'No cleanup approved. Check the terminal and restart.':'Complete';
+      $('finish').textContent=failed?'Analysis stopped.':'Analysis completed.';
+      $('heading').textContent=failed?'Analysis failed':'Analysis completed';
+      return;
+    }
+    $('message').textContent='';
+    setTimeout(poll,400);
+  }catch(error){
+    $('finish').textContent='Progress connection lost. Check the terminal; retrying...';
+    setTimeout(poll,1500);
+  }
+}
+async function submit(cancel){if(done)return;$('start').disabled=true;$('cancel').disabled=true;$('message').textContent='';try{const response=await fetch(`/decision/${data.token}`,{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':data.token},body:JSON.stringify({digest:data.digest,cancel,confirmation:$('manual').checked?'THRESHOLDS':'',min_size_mb:$('size').valueAsNumber,min_age_days:$('days').valueAsNumber})});if(!response.ok)throw new Error('Threshold confirmation was not accepted.');done=true;for(const el of document.querySelectorAll('input,button'))el.disabled=true;$('finish').style.display='block';$('finish').textContent=cancel?'Cancelled. Analysis was not started.':'Thresholds confirmed. Analysis is running; the object review opens next.';if(!cancel&&data.live_progress)processing()}catch(error){$('message').textContent=error.message+' If this session expired, start again from the terminal.';$('cancel').disabled=false;update()}}
 $('form').addEventListener('submit',event=>{event.preventDefault();if(valid()&&$('manual').checked)submit(false)});$('cancel').addEventListener('click',()=>submit(true));update();
+if(data.live_progress&&data.progress_state!=='waiting')processing();
 </script></body></html>
