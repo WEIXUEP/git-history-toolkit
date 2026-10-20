@@ -1,6 +1,6 @@
 ---
 name: git-history-toolkit
-description: Audit and clean large Git history objects with confirmation, or migrate squash-subtree directories while preserving host history and upstream synchronization. Supports Git/Gerrit analysis and multiple subtree add/pull verification. Use for oversized repositories, deleted large files, git_large_object_auditor and subtree history migration.
+description: Audit and clean large Git history objects with confirmation, or migrate squash-subtree directories while preserving host history and upstream synchronization. Supports Git/Gerrit analysis and multiple subtree add/pull verification. Use for oversized repositories, deleted large files and subtree history migration.
 ---
 
 # Git History Toolkit
