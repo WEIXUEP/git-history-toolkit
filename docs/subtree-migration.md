@@ -5,6 +5,15 @@ git-filter-repo 2.47+, retains all commits and parent order, and verifies every
 selected commit's tree, author/committer identities, timestamps and messages.
 The public test fixture is https://github.com/WEIXUEP/git-auditor-test-repo.
 
+Run `python -m unittest discover -s tests -p test_subtree_operations.py -v`
+to exercise real interleaved adds and pulls using an independent copy of that
+fixture (set `GIT_HISTORY_FIXTURE` if it is not beside the toolkit). The test
+adds two projects before migration and two afterward, migrates four subtree
+paths, and runs three update rounds across four then six projects. Each
+round adds, modifies, or deletes an upstream file. All 30 updates compare the
+entire host tree, retain local edits and repeat the pull to check idempotency.
+The original fixture refs are checked unchanged; no remote history is replaced.
+
 ## Why a path rename alone is insufficient
 
 `git mv` changes only one snapshot. `git log -- new/path` normally does not
