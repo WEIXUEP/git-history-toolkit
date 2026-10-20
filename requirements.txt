@@ -1,3 +1,3 @@
-# Required only for --execute-cleanup.
-git-filter-repo>=2.38
+# Required for confirmed history cleanup and subtree migration.
+git-filter-repo>=2.47
 

@@ -1,4 +1,48 @@
-# Git Large Object Auditor
+# Git History Toolkit
+
+Git history maintenance tools for large-object auditing/confirmed cleanup and
+squash-subtree directory migration with history continuity and upstream sync
+verification. The repository was previously named `git_large_object_auditor`.
+Existing `git_history_auditor.py` commands and the auditor skill remain valid.
+
+## Unified command line
+
+```powershell
+python .\git_history_toolkit.py audit --repo C:\repos\application --output-dir C:\audit
+python .\git_history_toolkit.py subtree plan --repo C:\repos\application --move vendor/old=components/new --ref refs/heads/main --output-dir C:\migration\plan
+python .\git_history_toolkit.py subtree migrate --plan C:\migration\plan\plan.json --workspace C:\migration\rewritten
+python .\git_history_toolkit.py subtree publish-plan --plan C:\migration\plan\plan.json --remote origin
+```
+
+Subtree migration rewrites an independent clone after confirmation, preserves
+squash-root upstream trees, translates subtree trailers, verifies every selected
+commit, and tests two incremental upstream pulls plus repeated-pull idempotency.
+It never pushes remotely. See [the migration guide](docs/subtree-migration.md)
+for historical aliases, multiple refs, permissions, collaboration and recovery.
+The standalone `git_subtree_migrator.py` exposes the same subtree subcommands.
+
+## Codex skill
+
+The subtree migration skill is in `skills/git-subtree-migrator/`, including
+its standalone scripts and migration guide. Both skills can be distributed
+independently by uploading their complete folders. PyYAML is needed only
+for the skill metadata validator, not for running migration commands.
+
+The self-contained, CLI-only skill is in `skills/git-large-object-auditor/`.
+Upload that entire folder, including `SKILL.md` and `scripts/`, to distribute
+the skill. It has no dependency on files outside its folder. Audits are
+read-only; history cleanup requires user confirmation, and remote history
+replacement requires a separate confirmation.
+
+The skill includes Git/Gerrit coverage and recovery guidance, plus instructions
+for the public [long-history regression fixture](https://github.com/WEIXUEP/git-auditor-test-repo).
+Reports distinguish automatic local cleanup from Gerrit administrator review.
+Cleanup verifies its bundle backup and refuses stale audits or repository
+changes during confirmation. The combined push workflow uses the actual push
+destination's explicit commit ID as its lease, preserving separate fetch and
+push URL settings. It requires an existing destination branch and a single
+push URL. The built-in post-rewrite tree check covers HEAD; review other
+protected refs before publishing. Linked worktrees require an independent clone.
 
 A read-only Git history auditor that identifies large blobs, classifies their
 current usage, analyzes locally available Gerrit `refs/changes/*` references,
@@ -21,6 +65,7 @@ requires a second interactive confirmation.
 - Uses `git filter-repo` only in explicit cleanup mode.
 - Uses `git push --force-with-lease` only after the user confirms the push.
 - Includes a lightweight Tkinter desktop interface with no extra UI dependency.
+- Can protect historical code-file blobs by recognized file suffix.
 
 ## Repository layout
 
@@ -72,6 +117,33 @@ python .\git_history_auditor.py `
 ```
 
 The default command only reads the repository and writes reports.
+
+To protect historical blobs associated with common source-code suffixes, add:
+
+```powershell
+python .\git_history_auditor.py `
+    --repo H:\fem\PyZFEM `
+    --protect-code-files
+```
+
+The option is disabled by default. When enabled, any blob with a known code
+file suffix in its historical paths is protected as a whole. The suffix check
+is case-insensitive and includes common extensions such as `.py`, `.c`,
+`.cpp`, `.java`, `.js`, `.ts`, `.go`, `.rs`, `.sh`, `.ps1`, `.sql`, `.html`,
+`.css`, `.vue`, and `.svelte`.
+
+Text and structured data files use a separate option:
+
+```powershell
+python .\git_history_auditor.py `
+    --repo H:\fem\PyZFEM `
+    --protect-text-data-files
+```
+
+This protects common documentation and data formats such as `.md`, `.txt`,
+`.rst`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.toml`, `.ini`,
+`.xml`, `.env`, and `.log`. The code and text/data switches are independent;
+enable both when both categories must be protected.
 
 ## Desktop interface
 
