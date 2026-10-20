@@ -28,7 +28,10 @@ def main(argv: list[str] | None = None) -> int:
         result = auditor.run()
         if args.execute_cleanup:
             GitHistoryRewriter(auditor.runner, auditor.options).execute(result)
-    except (ValueError, RepositoryError, GitCommandError, CleanupError) as exc:
+        elif args.review_html:
+            from src.html_review import review_in_browser
+            review_in_browser(result, auditor.options)
+    except (ValueError, OSError, RepositoryError, GitCommandError, CleanupError) as exc:
         parser.error(str(exc))
 
     print(f"Audit completed: {result.output_dir}")

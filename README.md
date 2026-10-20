@@ -43,8 +43,8 @@ git-filter-repo 2.47+ for history rewriting:
 python -m pip install -r requirements.txt
 ```
 
-Cleanup invokes `git filter-repo`, so its executable must be on PATH.
-Migration uses the module in the running Python environment.
+Cleanup uses `git filter-repo` on PATH or falls back to its module in the
+running Python interpreter. Migration uses the module in that interpreter.
 PyYAML is only for skill metadata validation. The CLI has no GUI dependency.
 Use full, non-empty working clones; clone bare remotes before analysis.
 Subtree migration requires SHA-1 and rejects partial clones.
@@ -90,6 +90,29 @@ destination and exact `--force-with-lease=FULL_REF:OLD_OID` command.
 Multi-branch/tag publication must enumerate each ref. Never mirror-push or
 publish Gerrit internal refs implicitly.
 See [Git/Gerrit coverage and recovery](skills/git-history-toolkit/references/git-and-gerrit.md).
+
+## Browser Confirmation
+
+Add `--review-html` to audit and open a Python-served local review page:
+
+```powershell
+python .\git_history_toolkit.py audit --repo C:\repos\application --output-dir C:\audit\application --review-html
+```
+
+The page groups by file suffix and displays readable and exact byte sizes,
+latest historical presence time, latest reference-change time, aliases and
+protection reasons. Nothing is selected initially. Protected/current objects
+and Gerrit administrator-review objects cannot be selected. REVIEW saves a
+selection receipt without rewriting history.
+
+To let the user approve a final subset for actual cleanup, add
+`--execute-cleanup --review-html`. The user must select eligible objects, type
+CLEANUP and submit. Only those IDs are stripped after backup and state checks.
+No worktree files are deleted. Remote PUSH still requires separate approval.
+Cancellation, timeout and stale refs stop cleanup. Use `--no-open-browser` to
+print the local URL, or omit `--review-html` for terminal-only confirmation.
+See [browser review](skills/git-history-toolkit/references/browser-review.md)
+for timestamp semantics, SSH use and cross-platform dependencies.
 
 ## Subtree Migration
 

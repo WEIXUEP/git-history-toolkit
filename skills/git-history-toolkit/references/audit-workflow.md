@@ -1,6 +1,6 @@
 # Git Large Object Auditor
 
-Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skill directory. This is a self-contained CLI skill with no GUI. Requires Python 3.10+ and Git; actual cleanup also requires git-filter-repo. Respond in the user's language.
+Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skill directory. Requires Python 3.10+ and Git; actual cleanup also requires git-filter-repo. For optional local HTML selection and confirmation, read [browser-review.md](browser-review.md). Respond in the user's language.
 
 ## Inspect and audit
 
@@ -27,9 +27,9 @@ For Git/Gerrit coverage, fetching, multiple branches, archive tags, or remote pu
 
 ## Confirm before cleanup
 
-Invoking this skill or asking for an audit/plan does not authorize actual cleanup. Before modification, show a concrete plan containing the absolute repository, exact command and options, local ref scope, `CLEAN_HISTORY` IDs and paths (link a complete report if long), excluded Gerrit objects, backup destination, and the fact that commit IDs change. Obtain the user's explicit confirmation for this plan and wait for their reply. A previous approval remains valid only for the same concrete plan and unchanged scope.
+Invoking this skill or asking for an audit/plan does not authorize actual cleanup. Before modification, show a concrete plan containing the absolute repository, exact command and options, local ref scope, `CLEAN_HISTORY` IDs and paths (link a complete report if long), excluded Gerrit objects, backup destination, and the fact that commit IDs change. Obtain the user's explicit confirmation for this plan. In terminal mode, wait for their reply; when they request HTML confirmation, their deliberate eligible selection and CLEANUP submission is the approval. Never submit it for them. A previous approval remains valid only for the same concrete plan and unchanged scope.
 
-Only after approval, rerun the same arguments with `--execute-cleanup` in an interactive terminal. Compare the newly printed candidates against the approved list before entering `CLEANUP`. New candidates, changed options, or changed refs require a new audit and confirmation. The CLI rejects stale audit refs, changes during confirmation, a dirty worktree, disabled HEAD protection, multiple linked worktrees, missing filter-repo, and disabled Gerrit scanning when local Gerrit refs exist.
+For terminal confirmation, only after approval rerun the same arguments with `--execute-cleanup` interactively. Compare the printed candidates against the approved list before entering `CLEANUP`. When the user requests browser confirmation, --review-html --execute-cleanup lets them select the final eligible subset and type CLEANUP in the page; that submission is the local approval. Never fill or submit it for them. New candidates, changed options, or changed refs require a new audit and confirmation. The CLI rejects stale audit refs, changes during confirmation, a dirty worktree, disabled HEAD protection, multiple linked worktrees, missing filter-repo, and disabled Gerrit scanning when local Gerrit refs exist.
 
 Do not discard or stash user work automatically. Do not replace confirmation callbacks, pipe confirmation tokens, or introduce a yes/force-approval switch. If interactive input is unavailable, give the exact command to run and state that cleanup has not executed. EOF, cancellation or no reply is not approval.
 

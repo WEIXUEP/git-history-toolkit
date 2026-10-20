@@ -54,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly protect a blob SHA; may be repeated.",
     )
     parser.add_argument("--output-dir", default="./git_audit")
+    parser.add_argument("--review-html", action="store_true",
+                        help="Open a local browser review grouped by suffix; cleanup still needs explicit confirmation.")
+    parser.add_argument("--review-timeout", type=int, default=600,
+                        help="Seconds to await browser confirmation (1-3600; default 600).")
+    parser.add_argument("--no-open-browser", action="store_true",
+                        help="Print the local review URL without launching a browser.")
     parser.add_argument(
         "--execute-cleanup",
         "--cleanup",

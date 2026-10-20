@@ -8,17 +8,20 @@ description: Audit and clean large Git history objects with confirmation, or mig
 Use the self-contained CLI `scripts/git_history_toolkit.py`, resolved relative
 to this skill. Respond in the user's language. Requires Python 3.10+ and Git;
 history rewriting needs git-filter-repo 2.47+, and subtree operations need
-`git subtree`. No GUI or separate skill installation is required.
+`git subtree`. Optional HTML confirmation uses Python's standard library and
+a local browser; no GUI framework or separate skill installation is needed.
 Use a working Python interpreter, not an OS launcher placeholder. Cleanup
-invokes `git filter-repo`, so its executable must also be on PATH; subtree
-migration uses the module in the current Python environment. Check the
-required command before proposing execution.
+uses git-filter-repo on PATH or the module in that interpreter; migration
+uses the module. Check the required command before proposing execution.
 
 ## Select the workflow
 
 - For large objects, deleted files or old binary versions, read
   [references/audit-workflow.md](references/audit-workflow.md). Start with a
   read-only audit; use 100 MiB / 180 days unless the user specifies otherwise.
+  For manual suffix-based selection, readable sizes and exact historical
+  presence times, read [references/browser-review.md](references/browser-review.md)
+  and add --review-html. Review alone never executes cleanup.
 - For subtree directory/history migration or add/pull verification, read
   [references/subtree-workflow.md](references/subtree-workflow.md). Start with
   an explicit path/ref plan. Keep upstream split identities and root trees.
@@ -40,7 +43,9 @@ available inside scripts for compatibility; both use the same bundled src.
 Audit and plan requests authorize inspection and reports. Before a real
 rewrite, present the concrete repository, exact operation, scope, affected
 refs/objects or paths, backup and validation plan, then obtain explicit user
-confirmation. Cleanup uses CLEANUP; subtree migration uses MIGRATE and creates
+confirmation. Cleanup uses terminal CLEANUP or the user's deliberate HTML
+selection plus CLEANUP submission; never automate their browser confirmation.
+Subtree migration uses MIGRATE and creates
 an independent clone. Preserve work and verified bundles; do not automatically
 stash, reset, expire reflogs or prune objects.
 

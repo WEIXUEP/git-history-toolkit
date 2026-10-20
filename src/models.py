@@ -55,6 +55,9 @@ class AuditorOptions:
     push_after_cleanup: bool = False
     push_remote: str = "origin"
     push_branch: str | None = None
+    review_html: bool = False
+    review_timeout: int = 600
+    no_open_browser: bool = False
 
     @property
     def min_size_bytes(self) -> int:
@@ -88,6 +91,9 @@ class AuditorOptions:
         push_after_cleanup = bool(getattr(args, "push_after_cleanup", False))
         if push_after_cleanup and not execute_cleanup:
             raise ValueError("--push-after-cleanup requires --execute-cleanup")
+        review_timeout = int(getattr(args, "review_timeout", 600))
+        if not 1 <= review_timeout <= 3600:
+            raise ValueError("review_timeout must be between 1 and 3600 seconds")
 
         return cls(
             repo=repo,
@@ -110,6 +116,9 @@ class AuditorOptions:
             push_after_cleanup=push_after_cleanup,
             push_remote=str(getattr(args, "push_remote", "origin")),
             push_branch=getattr(args, "push_branch", None) or None,
+            review_html=bool(getattr(args, "review_html", False)),
+            review_timeout=review_timeout,
+            no_open_browser=bool(getattr(args, "no_open_browser", False)),
         )
 
 

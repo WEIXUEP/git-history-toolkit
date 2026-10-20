@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 import json
+import importlib.util
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -64,6 +67,7 @@ class GitHistoryRewriter:
         self._push_branch: str | None = None
         self._push_lease_oid: str | None = None
         self._push_url: str | None = None
+        self._filter_repo_via_module = False
 
     def execute(self, result: AuditResult) -> None:
         clean_candidates = [
@@ -84,7 +88,17 @@ class GitHistoryRewriter:
         self._print_candidates(clean_candidates)
         self.emit(f"Repository: {self.runner.repo.resolve()}")
         self.emit(f"Backup destination: {result.output_dir / 'before_cleanup.bundle'}")
-        if not self._confirmed("Type CLEANUP to rewrite local history: ", "CLEANUP"):
+        if self.options.review_html:
+            from .html_review import review_in_browser
+            selected = review_in_browser(result, self.options, mode="cleanup", emit=self.emit)
+            allowed = {blob.sha for blob in clean_candidates}
+            if selected and (len(selected) != len(set(selected)) or not set(selected) <= allowed):
+                raise CleanupError("Browser selection contains ineligible or unknown objects")
+            approved = bool(selected)
+            clean_candidates = [blob for blob in clean_candidates if selected and blob.sha in selected]
+        else:
+            approved = self._confirmed("Type CLEANUP to rewrite local history: ", "CLEANUP")
+        if not approved:
             self.emit("Cleanup cancelled; Git history was not modified.")
             return
         self._ensure_safe_workspace(result)
@@ -183,7 +197,13 @@ class GitHistoryRewriter:
             raise CleanupError("local Gerrit refs exist but scanning was disabled; enable Gerrit scanning")
         status, _stdout, stderr = self.runner.run_with_status("filter-repo", "--version")
         if status != 0:
-            raise CleanupError(f"git-filter-repo is required before cleanup: {stderr.strip()}")
+            if importlib.util.find_spec("git_filter_repo") is None:
+                raise CleanupError(f"git-filter-repo is required before cleanup: {stderr.strip()}")
+            probe = subprocess.run([sys.executable, "-m", "git_filter_repo", "--version"],
+                                   capture_output=True, cwd=self.runner.repo)
+            if probe.returncode:
+                raise CleanupError("git-filter-repo module could not run in the current Python environment")
+            self._filter_repo_via_module = True
 
     def _create_backup(self, result: AuditResult) -> tuple[Path, Path]:
         bundle = result.output_dir / "before_cleanup.bundle"
@@ -194,6 +214,13 @@ class GitHistoryRewriter:
         return bundle, refs_file
 
     def _run_filter_repo(self, ids_file: Path) -> None:
+        if self._filter_repo_via_module:
+            result = subprocess.run([sys.executable, "-m", "git_filter_repo", "--force",
+                                     "--strip-blobs-with-ids", str(ids_file)],
+                                    cwd=self.runner.repo, capture_output=True)
+            if result.returncode:
+                raise CleanupError(result.stderr.decode("utf-8", "replace"))
+            return
         status, _stdout, stderr = self.runner.run_with_status("filter-repo", "--version")
         if status != 0:
             raise CleanupError(
