@@ -1,6 +1,6 @@
 # Git Large Object Auditor
 
-Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skill directory. Requires Python 3.10+ and Git; actual cleanup also requires git-filter-repo. For optional local HTML selection and confirmation, read [browser-review.md](browser-review.md). Respond in the user's language.
+Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skill directory. Requires Python 3.10+ and Git; actual cleanup also requires git-filter-repo. HTML selection and confirmation is the default final step after analysis; read [browser-review.md](browser-review.md). Respond in the user's language.
 
 ## Inspect and audit
 
@@ -19,6 +19,17 @@ Audit reads local objects and writes reports. It does not fetch, rewrite, push, 
 - **Gerrit administrator review** (`GERRIT_ADMIN_REVIEW`) objects.
 - Recent objects, omitted scope and coverage warnings.
 
+The CLI then opens an HTML review by default. Keep the local review server
+available while the user inspects it, open the page and provide its live URL.
+The table must expose file sizes, latest historical presence and suffix-based
+selection. Do not stop at text/CSV reports, even when there are no candidates:
+the HTML still shows protected results or an empty result. Never fill REVIEW
+or select/submit on the user's behalf. REVIEW saves a receipt only. For a
+headless host, arrange a reachable loopback URL or explain the limitation;
+--no-open-browser prints the URL while retaining HTML confirmation.
+Use --no-review-html for an explicitly requested terminal-only workflow or
+when a browser cannot be reached. This is a fallback, not implicit approval.
+
 `Policy eligible` includes Gerrit review objects; it is not the automatic cleanup count. Raw blob totals do not predict disk savings. Age measures the latest observed introducing/removing change from local history, not last filesystem access.
 
 Protect HEAD, local branch tips, remote-tracking tips and tags by default. Optional `--protect-code-files` and `--protect-text-data-files` protect historical suffixes. Repeat `--keep-path`, `--keep-blob`, `--include-path`, or `--exclude-path` to express user scope. Path/extension rules operate on whole blob IDs: one object can have multiple paths and aliases. Never silently weaken protections.
@@ -29,7 +40,7 @@ For Git/Gerrit coverage, fetching, multiple branches, archive tags, or remote pu
 
 Invoking this skill or asking for an audit/plan does not authorize actual cleanup. Before modification, show a concrete plan containing the absolute repository, exact command and options, local ref scope, `CLEAN_HISTORY` IDs and paths (link a complete report if long), excluded Gerrit objects, backup destination, and the fact that commit IDs change. Obtain the user's explicit confirmation for this plan. In terminal mode, wait for their reply; when they request HTML confirmation, their deliberate eligible selection and CLEANUP submission is the approval. Never submit it for them. A previous approval remains valid only for the same concrete plan and unchanged scope.
 
-For terminal confirmation, only after approval rerun the same arguments with `--execute-cleanup` interactively. Compare the printed candidates against the approved list before entering `CLEANUP`. When the user requests browser confirmation, --review-html --execute-cleanup lets them select the final eligible subset and type CLEANUP in the page; that submission is the local approval. Never fill or submit it for them. New candidates, changed options, or changed refs require a new audit and confirmation. The CLI rejects stale audit refs, changes during confirmation, a dirty worktree, disabled HEAD protection, multiple linked worktrees, missing filter-repo, and disabled Gerrit scanning when local Gerrit refs exist.
+Default cleanup uses `--execute-cleanup` with HTML still enabled: the user selects the final eligible subset and types CLEANUP in the page; that submission is local approval. Never fill or submit it for them. REVIEW from the earlier read-only page is not cleanup approval and its receipt cannot be replayed. For terminal confirmation, only after approval rerun the same arguments with `--execute-cleanup --no-review-html` interactively. Compare the printed candidates against the approved list before entering `CLEANUP`. New candidates, changed options, or changed refs require a new audit and confirmation. The CLI rejects stale audit refs, changes during confirmation, a dirty worktree, disabled HEAD protection, multiple linked worktrees, missing filter-repo, and disabled Gerrit scanning when local Gerrit refs exist.
 
 Do not discard or stash user work automatically. Do not replace confirmation callbacks, pipe confirmation tokens, or introduce a yes/force-approval switch. If interactive input is unavailable, give the exact command to run and state that cleanup has not executed. EOF, cancellation or no reply is not approval.
 

@@ -25,6 +25,11 @@ except ModuleNotFoundError:
 
 
 class CoreTests(unittest.TestCase):
+    def test_cli_defaults_to_html_review_with_terminal_opt_out(self) -> None:
+        parser = build_parser()
+        self.assertTrue(parser.parse_args(["--repo", "."]).review_html)
+        self.assertFalse(parser.parse_args(["--repo", ".", "--no-review-html"]).review_html)
+
     def test_options_are_normalized_and_validated(self) -> None:
         options = AuditorOptions.from_args(
             Namespace(

@@ -1,13 +1,14 @@
 # Browser confirmation
 
-Use Python's loopback HTTP review when the user wants to inspect and manually
-select historical objects. It has no Flask, Node, GUI toolkit, CDN or network
+Use Python's loopback HTTP review by default after every large-object audit,
+including zero-candidate results. Open the page and provide its live URL for
+the user's manual inspection and selection. It has no Flask, Node, GUI toolkit, CDN or network
 asset dependency. A modern local browser is the only UI requirement.
 
 ## Review without rewriting
 
 ```powershell
-python '<skill>/scripts/git_history_toolkit.py' audit --repo '<repo>' --output-dir '<external-report>' --review-html
+python '<skill>/scripts/git_history_toolkit.py' audit --repo '<repo>' --output-dir '<external-report>'
 ```
 
 The default browser opens a local URL with an English desktop interface.
@@ -41,8 +42,8 @@ The receipt is a record, not an authorization file to replay against later refs.
 ## Confirm selected-object cleanup
 
 First show the concrete audit scope, eligible candidates, exact command and
-backup path. The user may choose the final subset and explicitly approve it
-in the browser when they have requested browser confirmation:
+backup path. The user chooses the final subset and explicitly approves it
+in the default browser confirmation:
 
 ```powershell
 python '<skill>/scripts/git_history_toolkit.py' audit --repo '<repo>' --output-dir '<external-report>' --review-html --execute-cleanup
@@ -71,10 +72,11 @@ Browser cleanup approval never authorizes remote replacement or subtree work.
   the URL without launching a browser. Copying the exact URL is necessary
   because it contains a temporary session token; keep it private.
 - On a remote/SSH host, the URL belongs to that host. Use an explicitly arranged
-  loopback tunnel with the same port, or omit --review-html and use terminal
+  loopback tunnel with the same port, or explicitly use --no-review-html for terminal
   CLEANUP confirmation. The tool never binds the review service to a public IP.
 - Browser failure does not silently approve or switch confirmation modes.
-  Rerun in terminal mode when a local browser cannot reach the review service.
+  Explain the limitation and rerun with --no-review-html when a local browser
+  cannot reach the review service, or when the user requests terminal-only work.
 - Cleanup first tries git filter-repo on PATH, then the git_filter_repo module
   in the current Python interpreter. Install in that interpreter with
   `python -m pip install 'git-filter-repo>=2.47'`. No PATH edit is needed for

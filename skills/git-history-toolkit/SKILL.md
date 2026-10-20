@@ -1,6 +1,6 @@
 ---
 name: git-history-toolkit
-description: Audit and clean large Git history objects with confirmation, or migrate squash-subtree directories while preserving host history and upstream synchronization. Supports Git/Gerrit analysis and multiple subtree add/pull verification. Use for oversized repositories, deleted large files and subtree history migration.
+description: Audit large Git history objects with default HTML review and confirmed cleanup, or migrate squash-subtree directories while preserving host history and upstream synchronization. Supports Git/Gerrit analysis and multiple subtree add/pull verification. Use for oversized repositories, deleted large files and subtree history migration.
 ---
 
 # Git History Toolkit
@@ -8,7 +8,7 @@ description: Audit and clean large Git history objects with confirmation, or mig
 Use the self-contained CLI `scripts/git_history_toolkit.py`, resolved relative
 to this skill. Respond in the user's language. Requires Python 3.10+ and Git;
 history rewriting needs git-filter-repo 2.47+, and subtree operations need
-`git subtree`. Optional HTML confirmation uses Python's standard library and
+`git subtree`. Default HTML confirmation uses Python's standard library and
 a local browser; no GUI framework or separate skill installation is needed.
 Use a working Python interpreter, not an OS launcher placeholder. Cleanup
 uses git-filter-repo on PATH or the module in that interpreter; migration
@@ -19,9 +19,13 @@ uses the module. Check the required command before proposing execution.
 - For large objects, deleted files or old binary versions, read
   [references/audit-workflow.md](references/audit-workflow.md). Start with a
   read-only audit; use 100 MiB / 180 days unless the user specifies otherwise.
-  For manual suffix-based selection, readable sizes and exact historical
-  presence times, read [references/browser-review.md](references/browser-review.md)
-  and add --review-html. Review alone never executes cleanup.
+  Analysis must end with the default HTML review for manual suffix-based
+  selection, readable sizes and exact historical presence times. Read
+  [references/browser-review.md](references/browser-review.md). Open the page
+  and give the user its live local URL; JSON/CSV or a chat summary alone does
+  not complete the workflow. Review alone never executes cleanup. Use
+  --no-review-html only when the user explicitly chooses terminal-only work
+  or the environment cannot support a reachable browser; explain that limit.
 - For subtree directory/history migration or add/pull verification, read
   [references/subtree-workflow.md](references/subtree-workflow.md). Start with
   an explicit path/ref plan. Keep upstream split identities and root trees.
@@ -45,6 +49,8 @@ rewrite, present the concrete repository, exact operation, scope, affected
 refs/objects or paths, backup and validation plan, then obtain explicit user
 confirmation. Cleanup uses terminal CLEANUP or the user's deliberate HTML
 selection plus CLEANUP submission; never automate their browser confirmation.
+Use HTML by default for cleanup too. REVIEW only saves a selection and never
+authorizes cleanup; do not replay its receipt as CLEANUP approval.
 Subtree migration uses MIGRATE and creates
 an independent clone. Preserve work and verified bundles; do not automatically
 stash, reset, expire reflogs or prune objects.

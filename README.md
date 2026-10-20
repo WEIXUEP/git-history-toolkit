@@ -75,8 +75,9 @@ Policy-eligible totals are not automatic cleanup totals. Raw blob totals
 do not predict reclaimed local or server storage.
 
 After reviewing and approving the exact candidates, options and ref scope,
-repeat the audit command with `--execute-cleanup`. The tool prompts for
-CLEANUP, verifies a bundle backup and saves refs and remote configuration.
+repeat the audit command with `--execute-cleanup`. The HTML page requires
+manual selection and CLEANUP confirmation. The tool verifies a bundle backup
+and saves refs and remote configuration.
 It rejects stale audits and changes during confirmation. Its built-in tree
 check covers HEAD; inspect other protected branch/tag trees, the SHA map,
 remaining reachability and `git fsck` before publication. Preserve failed
@@ -93,10 +94,10 @@ See [Git/Gerrit coverage and recovery](skills/git-history-toolkit/references/git
 
 ## Browser Confirmation
 
-Add `--review-html` to audit and open a Python-served local review page:
+Every CLI audit opens a Python-served local HTML review after analysis by default:
 
 ```powershell
-python .\git_history_toolkit.py audit --repo C:\repos\application --output-dir C:\audit\application --review-html
+python .\git_history_toolkit.py audit --repo C:\repos\application --output-dir C:\audit\application
 ```
 
 The page groups by file suffix and displays readable and exact byte sizes,
@@ -110,7 +111,8 @@ To let the user approve a final subset for actual cleanup, add
 CLEANUP and submit. Only those IDs are stripped after backup and state checks.
 No worktree files are deleted. Remote PUSH still requires separate approval.
 Cancellation, timeout and stale refs stop cleanup. Use `--no-open-browser` to
-print the local URL, or omit `--review-html` for terminal-only confirmation.
+print the local URL. Use `--no-review-html` for explicit terminal-only operation
+or unattended report generation. An unavailable browser never approves cleanup.
 See [browser review](skills/git-history-toolkit/references/browser-review.md)
 for timestamp semantics, SSH use and cross-platform dependencies.
 
