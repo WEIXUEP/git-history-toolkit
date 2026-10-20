@@ -1,11 +1,6 @@
----
-name: git-subtree-migrator
-description: Plan and perform confirmed Git squash-subtree directory migrations, preserving host history and upstream identities. Verify multiple subtree add/pull workflows. Use for subtree renaming, directory relocation and continued upstream synchronization.
----
-
 # Git Subtree Migrator
 
-Use the self-contained `scripts/git_subtree_migrator.py` relative to this skill. Requires Python 3.10+, Git with subtree, and git-filter-repo 2.47+. Read [references/subtree-migration.md](references/subtree-migration.md) for operational details, limitations, publication permissions and rollback.
+Use the self-contained `scripts/git_subtree_migrator.py` relative to the skill root. Requires Python 3.10+, Git with subtree, and git-filter-repo 2.47+. Read [subtree-migration.md](subtree-migration.md) for operational details, limitations, publication permissions and rollback.
 
 Inspect the full working clone, explicit branch/tag scope, upstream sources and all historical source directory aliases. Use repeatable `--move OLD=NEW` mappings and full `--ref` names. Squashed upstream commits cannot provide their original per-file history in the host repository; this migration preserves host maintenance history.
 
@@ -25,7 +20,7 @@ python <skill>/scripts/git_subtree_migrator.py migrate --plan <new-report>/plan.
 
 The command prompts for MIGRATE, creates a verified bundle, rewrites the independent clone, validates each selected commit and tests two upstream increments plus repeat-pull idempotency. Review verification.json and commit-map.txt. Failed checks block publication; retain reports, backup and failed workspace for diagnosis. Never bypass checks with a force push.
 
-For multi-project add/pull validation or skill regression, read [references/testing.md](references/testing.md). The bundled regression uses the existing public large-object fixture in disposable clones: four additional adds, four migrated subtrees, six final projects, 30 update pulls and 30 repeat-pull checks. It tests additions, modifications and deletions in rotating project order, comparing the entire host tree after each update. This is separate from the migration command's automatic synthetic-addition probes. Do not claim the full regression ran merely because verification.json passed.
+For multi-project add/pull validation or skill regression, read [subtree-testing.md](subtree-testing.md). The bundled regression uses the existing public large-object fixture in disposable clones: four additional adds, four migrated subtrees, six final projects, 30 update pulls and 30 repeat-pull checks. It tests additions, modifications and deletions in rotating project order, comparing the entire host tree after each update. This is separate from the migration command's automatic synthetic-addition probes. Do not claim the full regression ran merely because verification.json passed.
 
 For a user's repository, report results per selected ref and target, including absent targets, old/new upstream split and failed/skipped checks. Check path log and blame for representative local edits; history simplification can hide tree-identical merges. Future upstream edits may conflict with local changes even when association checks pass. Do not resolve conflicts by discarding either side or add unrelated projects to the user's deliverable clone as a test.
 

@@ -1,8 +1,3 @@
----
-name: git-large-object-auditor
-description: Audit large Git history objects and prepare or perform user-confirmed cleanup, including ordinary Git branches/tags and Gerrit patch-set review. Use for git_large_object_auditor, oversized repositories, deleted large files, and old binary versions.
----
-
 # Git Large Object Auditor
 
 Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skill directory. This is a self-contained CLI skill with no GUI. Requires Python 3.10+ and Git; actual cleanup also requires git-filter-repo. Respond in the user's language.
@@ -11,7 +6,7 @@ Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skil
 
 Identify the absolute repository root, requested thresholds, branch/tag scope, and whether Gerrit is involved. Inspect worktree status, shallow status, refs, and configured fetch/push destinations. Use an existing working Python interpreter; an OS Python launcher placeholder is not an interpreter. This CLI requires a full, non-empty working clone; audit bare remotes through an independent full clone.
 
-Default to **100 MiB / 180 days** unless the user specifies other values. Explain a zero-result threshold before changing it. For the published test fixture, use **5 MiB / 180 days**, as documented in [references/testing.md](references/testing.md).
+Default to **100 MiB / 180 days** unless the user specifies other values. Explain a zero-result threshold before changing it. For the published test fixture, use **5 MiB / 180 days**, as documented in [audit-testing.md](audit-testing.md).
 
 ```powershell
 python "<skill>/scripts/git_history_auditor.py" --repo "<repository-root>" --output-dir "<external-report-directory>" --min-size-mb 100 --min-age-days 180
@@ -28,7 +23,7 @@ Audit reads local objects and writes reports. It does not fetch, rewrite, push, 
 
 Protect HEAD, local branch tips, remote-tracking tips and tags by default. Optional `--protect-code-files` and `--protect-text-data-files` protect historical suffixes. Repeat `--keep-path`, `--keep-blob`, `--include-path`, or `--exclude-path` to express user scope. Path/extension rules operate on whole blob IDs: one object can have multiple paths and aliases. Never silently weaken protections.
 
-For Git/Gerrit coverage, fetching, multiple branches, archive tags, or remote publication, read [references/git-and-gerrit.md](references/git-and-gerrit.md).
+For Git/Gerrit coverage, fetching, multiple branches, archive tags, or remote publication, read [git-and-gerrit.md](git-and-gerrit.md).
 
 ## Confirm before cleanup
 
@@ -38,7 +33,7 @@ Only after approval, rerun the same arguments with `--execute-cleanup` in an int
 
 Do not discard or stash user work automatically. Do not replace confirmation callbacks, pipe confirmation tokens, or introduce a yes/force-approval switch. If interactive input is unavailable, give the exact command to run and state that cleanup has not executed. EOF, cancellation or no reply is not approval.
 
-Before rewriting, the CLI creates and verifies `before_cleanup.bundle`, saves refs and remote/branch configuration, and writes the selected IDs. It rewrites locally with git-filter-repo and verifies the HEAD tree. It does not promise automatic rollback after a failure. Preserve backups; inspect failures and recover in a separate clone before proposing any further mutation. See recovery guidance in [references/git-and-gerrit.md](references/git-and-gerrit.md).
+Before rewriting, the CLI creates and verifies `before_cleanup.bundle`, saves refs and remote/branch configuration, and writes the selected IDs. It rewrites locally with git-filter-repo and verifies the HEAD tree. It does not promise automatic rollback after a failure. Preserve backups; inspect failures and recover in a separate clone before proposing any further mutation. See recovery guidance in [git-and-gerrit.md](git-and-gerrit.md).
 
 ## Verify and confirm push separately
 

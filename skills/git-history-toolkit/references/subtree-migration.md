@@ -6,7 +6,7 @@ selected commit's tree, author/committer identities, timestamps and messages.
 The public test fixture is https://github.com/WEIXUEP/git-auditor-test-repo.
 
 For real interleaved add/pull regression, use the packaged test described in
-[testing.md](testing.md). It uses an independent copy of that fixture and
+[subtree-testing.md](subtree-testing.md). It uses an independent copy of that fixture and
 does not require a toolkit checkout. Resolve <skill> in the examples below
 to this skill's absolute directory.
 

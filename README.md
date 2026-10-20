@@ -3,7 +3,8 @@
 Git history maintenance tools for large-object auditing/confirmed cleanup and
 squash-subtree directory migration with history continuity and upstream sync
 verification. The repository was previously named `git_large_object_auditor`.
-Existing `git_history_auditor.py` commands and the auditor skill remain valid.
+Existing `git_history_auditor.py` commands remain valid. Both capabilities
+are distributed as one `git-history-toolkit` skill.
 
 ## Unified command line
 
@@ -23,16 +24,15 @@ The standalone `git_subtree_migrator.py` exposes the same subtree subcommands.
 
 ## Codex skill
 
-The subtree migration skill is in `skills/git-subtree-migrator/`, including
-its standalone scripts and migration guide. Both skills can be distributed
-independently by uploading their complete folders. PyYAML is needed only
-for the skill metadata validator, not for running migration commands.
-
-The self-contained, CLI-only skill is in `skills/git-large-object-auditor/`.
-Upload that entire folder, including `SKILL.md` and `scripts/`, to distribute
-the skill. It has no dependency on files outside its folder. Audits are
-read-only; history cleanup requires user confirmation, and remote history
-replacement requires a separate confirmation.
+The single self-contained, CLI-only skill is in `skills/git-history-toolkit/`.
+Upload that entire folder, including `SKILL.md`, `scripts/` and `references/`.
+It contains large-object audit/cleanup, subtree migration and the multiple
+add/pull regression, with one shared implementation and command entry:
+`python <skill>/scripts/git_history_toolkit.py audit ...` or `subtree ...`.
+It needs no files outside its folder. PyYAML is only for metadata validation.
+Audits/plans are read-only; actual cleanup or migration requires confirmation,
+and remote history replacement requires separate confirmation. When combining
+operations, regenerate the next audit/plan after the preceding rewrite.
 
 The skill includes Git/Gerrit coverage and recovery guidance, plus instructions
 for the public [long-history regression fixture](https://github.com/WEIXUEP/git-auditor-test-repo).
