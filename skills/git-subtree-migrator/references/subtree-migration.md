@@ -5,14 +5,10 @@ git-filter-repo 2.47+, retains all commits and parent order, and verifies every
 selected commit's tree, author/committer identities, timestamps and messages.
 The public test fixture is https://github.com/WEIXUEP/git-auditor-test-repo.
 
-Run `python -m unittest discover -s tests -p test_subtree_operations.py -v`
-to exercise real interleaved adds and pulls using an independent copy of that
-fixture (set `GIT_HISTORY_FIXTURE` if it is not beside the toolkit). The test
-adds two projects before migration and two afterward, migrates four subtree
-paths, and runs three update rounds across four then six projects. Each
-round adds, modifies, or deletes an upstream file. All 30 updates compare the
-entire host tree, retain local edits and repeat the pull to check idempotency.
-The original fixture refs are checked unchanged; no remote history is replaced.
+For real interleaved add/pull regression, use the packaged test described in
+[testing.md](testing.md). It uses an independent copy of that fixture and
+does not require a toolkit checkout. Resolve <skill> in the examples below
+to this skill's absolute directory.
 
 ## Why a path rename alone is insufficient
 
@@ -34,10 +30,10 @@ history is preserved; original upstream history is queried in upstream refs.
 ## Plan first
 
 Requires Python 3.10+, Git with `git subtree`, and git-filter-repo installed
-in the same Python environment. Install with `python -m pip install -r requirements.txt`.
+in the same Python environment. Install with `python -m pip install 'git-filter-repo>=2.47'`.
 
 ```powershell
-python .\git_history_toolkit.py subtree plan `
+python '<skill>/scripts/git_subtree_migrator.py' plan `
   --repo C:\repos\application `
   --move vendor/engine=components/engine `
   --ref refs/heads/main `
@@ -73,7 +69,7 @@ Review `plan.json`, selected refs, mappings, affected commits and signatures.
 Coordinate a temporary publishing freeze with collaborators. Then run:
 
 ```powershell
-python .\git_history_toolkit.py subtree migrate `
+python '<skill>/scripts/git_subtree_migrator.py' migrate `
   --plan C:\migration\engine-plan\plan.json `
   --workspace C:\migration\application-rewritten
 ```
@@ -118,7 +114,7 @@ Refs without the subtree at their tips are explicitly marked not present.
 Prepare a read-only publication plan only after successful verification:
 
 ```powershell
-python .\git_history_toolkit.py subtree publish-plan `
+python '<skill>/scripts/git_subtree_migrator.py' publish-plan `
   --plan C:\migration\engine-plan\plan.json --remote origin
 ```
 
