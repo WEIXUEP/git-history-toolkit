@@ -119,6 +119,13 @@ class GitHistoryRewriter:
         )
 
         try:
+            from dataclasses import replace
+            from .audit_cache import AuditCache
+            cache = AuditCache(self.runner, replace(self.options, cache=True, execute_cleanup=False))
+            try:
+                cache.clear()
+            finally:
+                cache.close()
             self._run_filter_repo(ids_file)
             self._restore_remote_configuration(remote_configuration)
             after = TreeSnapshot.capture(self.runner)

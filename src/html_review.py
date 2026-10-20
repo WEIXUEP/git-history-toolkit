@@ -41,7 +41,29 @@ def review_payload(result, options, mode):
     runner = GitRunner(result.repository)
     if runner.ref_state() != result.ref_state:
         raise ValueError("Audit refs changed; run a fresh audit before browser review")
-    presence = historical_presence(runner, result.blobs)
+    from .audit_cache import AuditCache, CachedGitRunner, digest
+    cache = AuditCache(runner, options)
+    try:
+        key = digest(result.ref_state)
+        presence = {}
+        missing = []
+        for blob in result.blobs:
+            value = cache.get("presence", [key, blob.sha])
+            if value is None:
+                missing.append(blob)
+            else:
+                presence[blob.sha] = value
+        if missing:
+            calculated = historical_presence(CachedGitRunner(runner, cache, result.ref_state), missing)
+            presence.update(calculated)
+            if runner.ref_state() != result.ref_state:
+                raise ValueError("Refs changed while calculating historical presence")
+            for sha, value in calculated.items():
+                cache.put("presence", [key, sha], value)
+        info = cache.info()
+        (result.output_dir / "presence-cache-events.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    finally:
+        cache.close()
     rows = []
     for blob in result.blobs:
         suffixes = sorted({PurePosixPath(path).suffix.lower()

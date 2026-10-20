@@ -59,6 +59,10 @@ class AuditorOptions:
     review_html: bool = False
     review_timeout: int = 600
     no_open_browser: bool = False
+    cache: bool = False
+    cache_dir: Path | None = None
+    cache_max_mb: float = 256
+    cache_max_age_days: int = 30
 
     @property
     def min_size_bytes(self) -> int:
@@ -95,6 +99,10 @@ class AuditorOptions:
         review_timeout = int(getattr(args, "review_timeout", 600))
         if not 1 <= review_timeout <= 3600:
             raise ValueError("review_timeout must be between 1 and 3600 seconds")
+        cache_max_mb = float(getattr(args, "cache_max_mb", 256))
+        cache_max_age_days = int(getattr(args, "cache_max_age_days", 30))
+        if not math.isfinite(cache_max_mb * 1048576) or cache_max_mb <= 0 or cache_max_age_days < 1:
+            raise ValueError("Cache size must be positive and finite; cache age must be at least 1 day")
 
         return cls(
             repo=repo,
@@ -120,6 +128,10 @@ class AuditorOptions:
             review_html=bool(getattr(args, "review_html", False)),
             review_timeout=review_timeout,
             no_open_browser=bool(getattr(args, "no_open_browser", False)),
+            cache=bool(getattr(args, "cache", False)),
+            cache_dir=Path(args.cache_dir).expanduser().resolve() if getattr(args, "cache_dir", None) else None,
+            cache_max_mb=cache_max_mb,
+            cache_max_age_days=cache_max_age_days,
         )
 
 
@@ -252,6 +264,7 @@ class AuditResult:
     warnings: list[str] = field(default_factory=list)
     report_files: dict[str, Path] = field(default_factory=dict)
     ref_state: tuple[str, str, str] | None = None
+    cache_info: dict[str, Any] = field(default_factory=dict)
 
     @property
     def cleanup_count(self) -> int:

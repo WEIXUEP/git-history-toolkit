@@ -48,6 +48,18 @@ python '<skill>/scripts/git_history_toolkit.py' subtree plan --repo '<repo>' --m
 The standalone `git_history_auditor.py` and `git_subtree_migrator.py` remain
 available inside scripts for compatibility; both use the same bundled src.
 
+## Incremental audit cache
+
+CLI audits cache Git facts by default in the OS user cache directory, outside
+the worktree. Read [references/audit-cache.md](references/audit-cache.md) for
+reuse, invalidation, limits and maintenance. Report cache mode and events with
+the audit. Recompute classifications from this run's thresholds/protection
+rules/time; cached candidates and approval receipts are never authorization.
+Cleanup audits always bypass cache, and confirmed cleanup clears its namespace
+before rewriting. Subtree clones have separate identities; there is no cached
+migration or publication approval. Use --no-cache when comparing fresh reads.
+Cache maintenance removes only disposable cache data, never reports/backups.
+
 ## Mutation and publication
 
 Audit and plan requests authorize inspection and reports. Before a real

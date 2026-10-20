@@ -29,11 +29,28 @@ class GitLargeObjectAuditor:
         self.runner = GitRunner(self.options.repo)
 
     def run(self) -> AuditResult:
+        from .audit_cache import AuditCache, CachedGitRunner
+        root = RepositoryInspector(self.runner).validate()
+        self.runner.repo = root
+        raw = self.runner
+        cache = AuditCache(raw, self.options)
+        state = raw.ref_state()
+        self.runner = CachedGitRunner(raw, cache, state)
+        try:
+            return self._run(cache, state)
+        finally:
+            self.runner = raw
+            cache.close()
+
+    def _run(self, cache, expected_state) -> AuditResult:
         audit_time = datetime.now(timezone.utc)
         repository = RepositoryInspector(self.runner)
         root = repository.validate()
         self.runner.repo = root
         ref_state = self.runner.ref_state()
+        if ref_state != expected_state:
+            from .repository import RepositoryError
+            raise RepositoryError("Refs changed before cached analysis; rerun the audit")
         if root != self.options.repo:
             LOGGER.info("Using Git worktree root: %s", root)
 
@@ -51,7 +68,7 @@ class GitLargeObjectAuditor:
         path_policy = PathPolicy(self.options)
         blobs = [
             blob
-            for blob in BlobScanner(self.runner).scan(self.options.min_size_bytes)
+            for blob in BlobScanner(self.runner, cache).scan(self.options.min_size_bytes)
             if path_policy.is_in_scope(blob)
         ]
         blob_map = {blob.sha: blob for blob in blobs}
@@ -82,6 +99,7 @@ class GitLargeObjectAuditor:
             min_age_days=self.options.min_age_days,
             warnings=[] if repository.worktree_clean() else ["Worktree is dirty; the audit itself is read-only."],
             ref_state=ref_state,
+            cache_info=cache.info(),
         )
         result.report_files = AuditReporter().write(result)
         return result

@@ -125,6 +125,29 @@ An unavailable browser never approves cleanup.
 See [browser review](skills/git-history-toolkit/references/browser-review.md)
 for timestamp semantics, SSH use and cross-platform dependencies.
 
+## Incremental Cache
+
+Audits cache Git facts by default outside the worktree. Unchanged refs reuse
+object inventories and history queries; added refs/fast-forward commits scan
+new objects and paths incrementally. Removed/rewritten refs and moved tags
+rebuild the inventory. Thresholds, age and protection rules are applied fresh.
+History/presence queries may still traverse history after ref changes.
+
+The default per-repository payload limit is 256 MiB, with 30-day expiration
+and LRU eviction. Corrupt/unavailable caches fall back to fresh Git reads.
+Use --no-cache, --cache-dir, --cache-max-mb or --cache-max-age-days as needed.
+Cleanup audits always bypass caching and clear it before the confirmed rewrite.
+
+```powershell
+python .\git_history_toolkit.py cache status --repo C:\repos\application
+python .\git_history_toolkit.py cache prune --repo C:\repos\application
+python .\git_history_toolkit.py cache clear --repo C:\repos\application
+```
+
+cache-events.json and presence-cache-events.json record reuse and invalidation.
+clear affects only the selected repository's disposable cache, keeping reports,
+backups and Git history. See [cache lifecycle and limits](skills/git-history-toolkit/references/audit-cache.md).
+
 ## Subtree Migration
 
 ```powershell

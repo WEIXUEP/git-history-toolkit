@@ -23,8 +23,12 @@ class AuditReporter:
             "protected_ids": result.output_dir / "protected_blobs.txt",
             "gerrit": result.output_dir / "gerrit_referenced.csv",
             "admin_plan": result.output_dir / "admin_cleanup_plan.txt",
+            "cache": result.output_dir / "cache-events.json",
         }
         self._write_summary(files["summary"], result)
+        files["cache"].write_text(json.dumps({"audit_time": result.audit_time.isoformat(),
+            "repository": str(result.repository), "ref_state": result.ref_state,
+            **result.cache_info}, indent=2) + "\n", encoding="utf-8")
         self._write_blob_csv(files["blobs_csv"], result.blobs, result.audit_time)
         files["blobs_json"].write_text(
             json.dumps([blob.to_dict() for blob in result.blobs], ensure_ascii=False, indent=2),
@@ -84,6 +88,13 @@ class AuditReporter:
             "-" * 50,
         ]
         lines.extend(f"{key}: {value}" for key, value in result.repo_stats_before.values.items())
+        if result.cache_info:
+            lines.extend(["", "Audit Cache", "-" * 50,
+                f"Mode: {result.cache_info.get('mode')}",
+                f"Location: {result.cache_info.get('path')}",
+                f"Hits / misses: {result.cache_info.get('hits')} / {result.cache_info.get('misses')}",
+                f"Entries evicted: {result.cache_info.get('evicted')}"])
+            lines.extend(result.cache_info.get("events", []))
         if result.warnings or coverage.warnings:
             lines.extend(["", "Warnings", "-" * 50])
             lines.extend(f"- {warning}" for warning in [*result.warnings, *coverage.warnings])

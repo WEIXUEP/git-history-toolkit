@@ -54,6 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly protect a blob SHA; may be repeated.",
     )
     parser.add_argument("--output-dir", default="./git_audit")
+    parser.add_argument("--cache", action=argparse.BooleanOptionalAction, default=True,
+                        help="Reuse disposable audit facts (default: enabled); cleanup audits always read fresh Git data.")
+    parser.add_argument("--cache-dir", help="External cache root; defaults to the OS user cache directory.")
+    parser.add_argument("--cache-max-mb", type=float, default=256,
+                        help="Maximum cached payload per repository in MiB (default 256).")
+    parser.add_argument("--cache-max-age-days", type=int, default=30,
+                        help="Expire cached entries after this many days (default 30).")
     parser.add_argument("--review-html", action=argparse.BooleanOptionalAction, default=True,
                         help="Open HTML confirmation after analysis (default: enabled); use --no-review-html for terminal-only operation.")
     parser.add_argument("--review-timeout", type=int, default=600,

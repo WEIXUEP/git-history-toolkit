@@ -50,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Policy eligible: {result.cleanup_count}")
     print(f"Automatic local cleanup: {result.automatic_cleanup_count}")
     print(f"Gerrit administrator review: {result.gerrit_review_count}")
+    print(f"Audit cache: {result.cache_info.get('mode')}; hits={result.cache_info.get('hits')}, misses={result.cache_info.get('misses')}")
     return 0
 
 
