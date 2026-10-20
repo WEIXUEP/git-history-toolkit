@@ -33,7 +33,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Audit completed: {result.output_dir}")
     print(f"Large blobs: {len(result.blobs)}")
-    print(f"Cleanup eligible: {result.cleanup_count}")
+    print(f"Policy eligible: {result.cleanup_count}")
+    print(f"Automatic local cleanup: {result.automatic_cleanup_count}")
+    print(f"Gerrit administrator review: {result.gerrit_review_count}")
     return 0
 
 

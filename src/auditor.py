@@ -32,6 +32,8 @@ class GitLargeObjectAuditor:
         audit_time = datetime.now(timezone.utc)
         repository = RepositoryInspector(self.runner)
         root = repository.validate()
+        self.runner.repo = root
+        ref_state = self.runner.ref_state()
         if root != self.options.repo:
             LOGGER.info("Using Git worktree root: %s", root)
 
@@ -66,6 +68,9 @@ class GitLargeObjectAuditor:
         BlobClassifier(self.options, audit_time).classify(blobs)
 
         output_dir = self._new_output_dir(root.name, audit_time)
+        if self.runner.ref_state() != ref_state:
+            from .repository import RepositoryError
+            raise RepositoryError("repository refs changed during the audit; rerun with no concurrent Git operations")
         result = AuditResult(
             repository=root,
             audit_time=audit_time,
@@ -76,6 +81,7 @@ class GitLargeObjectAuditor:
             min_size_bytes=self.options.min_size_bytes,
             min_age_days=self.options.min_age_days,
             warnings=[] if repository.worktree_clean() else ["Worktree is dirty; the audit itself is read-only."],
+            ref_state=ref_state,
         )
         result.report_files = AuditReporter().write(result)
         return result

@@ -24,12 +24,13 @@ class BlobClassifier:
                 blob.protection_reason = "present in a protected current ref tree"
                 continue
 
-            if self.path_policy.is_explicitly_protected(blob):
+            protection_reason = self.path_policy.protection_reason(blob)
+            if protection_reason is not None:
                 blob.status = BlobStatus.PROTECTED
                 blob.eligible = False
                 blob.action = CleanupAction.KEEP
                 blob.is_protected = True
-                blob.protection_reason = "matched --keep-path or --keep-blob"
+                blob.protection_reason = protection_reason
                 continue
 
             age_days = blob.age_days(self.audit_time)

@@ -27,11 +27,33 @@ class BlobScanner:
 
         object_ids = list(object_paths)
         metadata = self._batch_check(object_ids)
-        return [
+        blobs = [
             BlobInfo(sha=sha, size_bytes=size, paths=object_paths.get(sha, set()))
             for sha, (object_type, size) in metadata.items()
             if object_type == "blob" and size >= min_size_bytes
         ]
+        self._collect_historical_paths({blob.sha: blob for blob in blobs})
+        return blobs
+
+    def _collect_historical_paths(self, blobs: dict[str, BlobInfo]) -> None:
+        if not blobs:
+            return
+        # rev-list assigns only one representative path per object. Raw NUL
+        # records preserve aliases, deletions and paths containing whitespace.
+        records = iter(self.runner.run(
+            "log", "--all", "--raw", "-z", "--format=", "--no-abbrev", "--no-renames", "-m",
+        ).split("\x00"))
+        for record in records:
+            header = record.lstrip("\n")
+            if not header.startswith(":"):
+                continue
+            fields = header.split()
+            path = next(records, None)
+            if len(fields) != 5 or path is None:
+                continue
+            for sha in fields[2:4]:
+                if sha in blobs:
+                    blobs[sha].paths.add(path)
 
     def _batch_check(self, object_ids: list[str]) -> dict[str, tuple[str, int]]:
         # A single batch-check invocation avoids one subprocess per object.

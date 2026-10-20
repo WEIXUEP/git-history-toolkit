@@ -94,6 +94,32 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(args.push_remote, "upstream")
         self.assertEqual(args.push_branch, "main")
 
+    def test_code_file_protection_uses_suffixes(self) -> None:
+        options = AuditorOptions(repo=Path("."), protect_code_files=True)
+        policy = PathPolicy(options)
+        code_blob = BlobInfo("a" * 40, 100, {"src/legacy/module.py"})
+        data_blob = BlobInfo("b" * 40, 100, {"data/model.bin"})
+        self.assertTrue(policy.is_explicitly_protected(code_blob))
+        self.assertEqual(
+            policy.protection_reason(code_blob),
+            "matched --protect-code-files by file suffix",
+        )
+        self.assertFalse(policy.is_explicitly_protected(data_blob))
+
+    def test_text_data_protection_is_separate_from_code_protection(self) -> None:
+        text_options = AuditorOptions(repo=Path("."), protect_text_data_files=True)
+        text_policy = PathPolicy(text_options)
+        markdown_blob = BlobInfo("a" * 40, 100, {"docs/README.md"})
+        json_blob = BlobInfo("b" * 40, 100, {"config/settings.json"})
+        source_blob = BlobInfo("c" * 40, 100, {"src/main.py"})
+        self.assertTrue(text_policy.is_explicitly_protected(markdown_blob))
+        self.assertTrue(text_policy.is_explicitly_protected(json_blob))
+        self.assertFalse(text_policy.is_explicitly_protected(source_blob))
+        self.assertEqual(
+            text_policy.protection_reason(markdown_blob),
+            "matched --protect-text-data-files by file suffix",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

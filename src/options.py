@@ -22,6 +22,16 @@ def build_parser() -> argparse.ArgumentParser:
         ("protect-local-branches", True, "Protect local branch tip trees."),
         ("protect-remote-branches", True, "Protect remote-tracking branch tip trees."),
         ("protect-tags", True, "Protect tag target trees."),
+        (
+            "protect-code-files",
+            False,
+            "Protect historical blobs associated with recognized code-file suffixes.",
+        ),
+        (
+            "protect-text-data-files",
+            False,
+            "Protect historical blobs associated with recognized text and data suffixes.",
+        ),
         ("scan-gerrit-refs", True, "Analyze locally available refs/changes/* refs."),
         ("verbose", True, "Show informational progress messages."),
     ):

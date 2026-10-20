@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -62,6 +63,7 @@ class GitHistoryRewriter:
         self.emit = emit
         self._push_branch: str | None = None
         self._push_lease_oid: str | None = None
+        self._push_url: str | None = None
 
     def execute(self, result: AuditResult) -> None:
         clean_candidates = [
@@ -75,29 +77,41 @@ class GitHistoryRewriter:
             return
 
         self._ensure_safe_workspace(result)
+        self._ensure_cleanup_prerequisites()
+        if result.ref_state is None or self.runner.ref_state() != result.ref_state:
+            raise CleanupError("audit refs are stale or missing; audit again before cleanup")
+        approved_state = self._repository_state()
         self._print_candidates(clean_candidates)
-        if self.confirm("Type CLEANUP to rewrite local history: ").strip() != "CLEANUP":
+        self.emit(f"Repository: {self.runner.repo.resolve()}")
+        self.emit(f"Backup destination: {result.output_dir / 'before_cleanup.bundle'}")
+        if not self._confirmed("Type CLEANUP to rewrite local history: ", "CLEANUP"):
             self.emit("Cleanup cancelled; Git history was not modified.")
             return
+        self._ensure_safe_workspace(result)
+        if self._repository_state() != approved_state:
+            raise CleanupError("repository refs or HEAD changed during confirmation; audit again and reconfirm")
 
-        ids_file = result.output_dir / "cleanup_blobs.txt"
-        ids_file.write_text("".join(f"{blob.sha}\n" for blob in clean_candidates), encoding="ascii")
-        backup_bundle, refs_file = self._create_backup(result)
-        before = TreeSnapshot.capture(self.runner)
-        remote_url = self._remote_url()
         if self.options.push_after_cleanup:
             self._push_branch = self._branch_name()
             self._push_lease_oid = self._remote_branch_oid(self._push_branch)
 
+        ids_file = result.output_dir / "cleanup_blobs.txt"
+        ids_file.write_text("".join(f"{blob.sha}\n" for blob in clean_candidates), encoding="ascii")
+        backup_bundle, _refs_file = self._create_backup(result)
+        before = TreeSnapshot.capture(self.runner)
+        remote_configuration = self._remote_configuration()
+        (result.output_dir / "before_cleanup_remote_config.json").write_text(
+            json.dumps(remote_configuration, indent=2), encoding="utf-8"
+        )
+
         try:
             self._run_filter_repo(ids_file)
-            self._restore_remote_if_needed(remote_url)
+            self._restore_remote_configuration(remote_configuration)
             after = TreeSnapshot.capture(self.runner)
             differences = before.differences(after)
             if differences:
-                self._restore_refs(refs_file)
                 raise CleanupError(
-                    "current HEAD tree changed after history rewrite; refs were restored. "
+                    "current HEAD tree changed after history rewrite; stop and recover from the backup in a separate clone. "
                     f"Changed paths: {', '.join(differences[:10])}"
                 )
         except (GitCommandError, CleanupError) as exc:
@@ -124,10 +138,15 @@ class GitHistoryRewriter:
 
         command = self._push_command()
         self.emit("\nThe following push will replace the remote branch history:")
+        self.emit(f"Destination: {self._push_url}")
         self.emit(f"  {command}")
-        if self.confirm("Type PUSH to execute this force-with-lease push: ").strip() != "PUSH":
+        push_state = self._repository_state()
+        if not self._confirmed("Type PUSH to execute this force-with-lease push: ", "PUSH"):
             self.emit("Push cancelled; local cleanup remains in place.")
             return
+        self._ensure_safe_workspace(result)
+        if self._repository_state() != push_state:
+            raise CleanupError("repository changed during push confirmation; review again before pushing")
         self._push()
         self.emit("Push completed.")
 
@@ -146,10 +165,31 @@ class GitHistoryRewriter:
             "otherwise generated reports become untracked worktree files"
         )
 
+    def _confirmed(self, prompt: str, token: str) -> bool:
+        try:
+            return self.confirm(prompt).strip() == token
+        except (EOFError, KeyboardInterrupt):
+            return False
+
+    def _repository_state(self) -> tuple:
+        return (*self.runner.ref_state(), self._remote_configuration())
+
+    def _ensure_cleanup_prerequisites(self) -> None:
+        if not self.options.protect_head:
+            raise CleanupError("cleanup requires HEAD protection; audit with --protect-head")
+        if len(self.runner.run("worktree", "list", "--porcelain").split("worktree ")) > 2:
+            raise CleanupError("cleanup with multiple linked worktrees is unsupported; use an independent clone")
+        if not self.options.scan_gerrit_refs and self.runner.run("for-each-ref", "refs/changes"):
+            raise CleanupError("local Gerrit refs exist but scanning was disabled; enable Gerrit scanning")
+        status, _stdout, stderr = self.runner.run_with_status("filter-repo", "--version")
+        if status != 0:
+            raise CleanupError(f"git-filter-repo is required before cleanup: {stderr.strip()}")
+
     def _create_backup(self, result: AuditResult) -> tuple[Path, Path]:
         bundle = result.output_dir / "before_cleanup.bundle"
         refs_file = result.output_dir / "before_cleanup_refs.txt"
         self.runner.run("bundle", "create", str(bundle), "--all")
+        self.runner.run("bundle", "verify", str(bundle))
         refs_file.write_text(self.runner.run("show-ref"), encoding="utf-8")
         return bundle, refs_file
 
@@ -167,34 +207,29 @@ class GitHistoryRewriter:
             str(ids_file),
         )
 
-    def _remote_url(self) -> str | None:
-        status, stdout, _stderr = self.runner.run_with_status(
-            "remote", "get-url", "--push", self.options.push_remote
+    def _remote_configuration(self) -> dict[str, list[str]]:
+        status, output, _stderr = self.runner.run_with_status(
+            "config", "--local", "--null", "--get-regexp", r"^(remote|branch)\."
         )
-        return stdout.strip() if status == 0 and stdout.strip() else None
+        if status not in (0, 1):
+            raise CleanupError("cannot read local remote configuration")
+        configuration: dict[str, list[str]] = {}
+        for record in output.split("\x00"):
+            if record:
+                key, separator, value = record.partition("\n")
+                if not separator:
+                    raise CleanupError("invalid Git config record")
+                configuration.setdefault(key, []).append(value)
+        return configuration
 
-    def _restore_remote_if_needed(self, remote_url: str | None) -> None:
-        if not remote_url:
-            return
-        status, stdout, _stderr = self.runner.run_with_status(
-            "remote", "get-url", self.options.push_remote
-        )
-        if status != 0:
-            self.runner.run("remote", "add", self.options.push_remote, remote_url)
-        elif stdout.strip() != remote_url:
-            self.runner.run("remote", "set-url", self.options.push_remote, remote_url)
-
-    def _restore_refs(self, refs_file: Path) -> None:
-        original: dict[str, str] = {}
-        for line in refs_file.read_text(encoding="utf-8").splitlines():
-            oid, ref = line.split(" ", 1)
-            original[ref] = oid
-        current = self.runner.run("for-each-ref", "--format=%(refname)").splitlines()
-        for ref in current:
-            if ref not in original:
-                self.runner.run("update-ref", "-d", ref)
-        for ref, oid in original.items():
-            self.runner.run("update-ref", ref, oid)
+    def _restore_remote_configuration(self, configuration: dict[str, list[str]]) -> None:
+        current = self._remote_configuration()
+        for key, values in configuration.items():
+            if current.get(key) == values:
+                continue
+            self.runner.run("config", "--local", "--unset-all", key, check=False)
+            for value in values:
+                self.runner.run("config", "--local", "--add", key, value)
 
     def _push_command(self) -> str:
         branch = self._push_branch or self._branch_name()
@@ -217,11 +252,11 @@ class GitHistoryRewriter:
         )
         if status != 0:
             raise CleanupError(f"push remote does not exist: {self.options.push_remote}")
+        urls = self.runner.run("remote", "get-url", "--push", "--all", self.options.push_remote).splitlines()
+        if not self._push_lease_oid or urls != [self._push_url]:
+            raise CleanupError("push destination changed or explicit remote lease is missing; review again")
         arguments = ["push"]
-        if self._push_lease_oid:
-            arguments.append(f"--force-with-lease=refs/heads/{branch}:{self._push_lease_oid}")
-        else:
-            arguments.append("--force-with-lease")
+        arguments.append(f"--force-with-lease=refs/heads/{branch}:{self._push_lease_oid}")
         arguments.extend([self.options.push_remote, f"HEAD:refs/heads/{branch}"])
         self.runner.run(
             *arguments,
@@ -238,10 +273,17 @@ class GitHistoryRewriter:
         return branch
 
     def _remote_branch_oid(self, branch: str) -> str | None:
-        status, stdout, _stderr = self.runner.run_with_status(
-            "rev-parse", "--verify", f"refs/remotes/{self.options.push_remote}/{branch}"
-        )
-        return stdout.strip() if status == 0 and stdout.strip() else None
+        self.runner.run("check-ref-format", f"refs/heads/{branch}")
+        urls = self.runner.run("remote", "get-url", "--push", "--all", self.options.push_remote).splitlines()
+        if len(urls) != 1:
+            raise CleanupError("combined push requires exactly one push URL; review multiple destinations manually")
+        self._push_url = urls[0]
+        ref = f"refs/heads/{branch}"
+        status, stdout, _stderr = self.runner.run_with_status("ls-remote", "--exit-code", urls[0], ref)
+        lines = [line.split() for line in stdout.splitlines()]
+        if status != 0 or len(lines) != 1 or len(lines[0]) != 2 or lines[0][1] != ref:
+            raise CleanupError("cannot establish the existing destination branch OID; no cleanup or push performed")
+        return lines[0][0]
 
     def _print_candidates(self, blobs: list[BlobInfo]) -> None:
         self.emit("The following historical blobs will be removed from local rewritten history:")

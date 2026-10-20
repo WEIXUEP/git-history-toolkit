@@ -42,6 +42,8 @@ class AuditorOptions:
     protect_local_branches: bool = True
     protect_remote_branches: bool = True
     protect_tags: bool = True
+    protect_code_files: bool = False
+    protect_text_data_files: bool = False
     scan_gerrit_refs: bool = True
     include_paths: tuple[str, ...] = ()
     exclude_paths: tuple[str, ...] = ()
@@ -95,6 +97,8 @@ class AuditorOptions:
             protect_local_branches=bool(getattr(args, "protect_local_branches", True)),
             protect_remote_branches=bool(getattr(args, "protect_remote_branches", True)),
             protect_tags=bool(getattr(args, "protect_tags", True)),
+            protect_code_files=bool(getattr(args, "protect_code_files", False)),
+            protect_text_data_files=bool(getattr(args, "protect_text_data_files", False)),
             scan_gerrit_refs=bool(getattr(args, "scan_gerrit_refs", True)),
             include_paths=values("include_paths", values("include_path")),
             exclude_paths=values("exclude_paths", values("exclude_path")),
@@ -237,10 +241,19 @@ class AuditResult:
     min_age_days: int
     warnings: list[str] = field(default_factory=list)
     report_files: dict[str, Path] = field(default_factory=dict)
+    ref_state: tuple[str, str, str] | None = None
 
     @property
     def cleanup_count(self) -> int:
         return sum(blob.eligible for blob in self.blobs)
+
+    @property
+    def automatic_cleanup_count(self) -> int:
+        return sum(blob.action == CleanupAction.CLEAN_HISTORY for blob in self.blobs)
+
+    @property
+    def gerrit_review_count(self) -> int:
+        return sum(blob.action == CleanupAction.GERRIT_ADMIN_REVIEW for blob in self.blobs)
 
 
 def _looks_like_object_id(value: str) -> bool:

@@ -24,6 +24,13 @@ class GitRunner:
     def __init__(self, repo: Path) -> None:
         self.repo = repo
 
+    def ref_state(self) -> tuple[str, str, str]:
+        return (
+            self.run("rev-parse", "HEAD").strip(),
+            self.run("symbolic-ref", "-q", "HEAD", check=False).strip(),
+            self.run("for-each-ref", "--format=%(refname) %(objectname)"),
+        )
+
     def run(self, *args: str, check: bool = True) -> str:
         command = [str(arg) for arg in args]
         completed = subprocess.run(

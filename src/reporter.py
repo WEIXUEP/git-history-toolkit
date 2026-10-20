@@ -67,6 +67,8 @@ class AuditReporter:
             f"Deleted paths: {counts['DELETED_PATH']}",
             f"Gerrit referenced: {counts['GERRIT_PATCHSET_ONLY']}",
             f"Cleanup eligible: {result.cleanup_count}",
+            f"Automatic local cleanup: {result.automatic_cleanup_count}",
+            f"Gerrit administrator review: {result.gerrit_review_count}",
             f"Raw candidate blob size: {_format_size(candidate_size)}",
             "",
             "Scan Coverage",

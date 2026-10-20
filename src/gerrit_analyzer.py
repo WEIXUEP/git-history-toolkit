@@ -18,12 +18,13 @@ class GerritAnalyzer:
     def analyze(
         self, refs: list[RefInfo], blobs: dict[str, BlobInfo], coverage: ScanCoverage
     ) -> None:
-        gerrit_refs = [ref for ref in refs if ref.kind == "gerrit"]
+        gerrit_refs = [ref for ref in refs if ref.kind == "gerrit" and CHANGE_REF_PATTERN.match(ref.name)]
         coverage.gerrit_refs_available = bool(gerrit_refs)
         if not gerrit_refs:
             coverage.gerrit_refs = False
             coverage.warnings.append(
-                "No local refs/changes/* refs were found; Gerrit reachability is incomplete."
+                "No local numeric Gerrit patch-set refs were found; Gerrit reachability is incomplete. "
+                "Meta refs alone do not provide patch-set coverage."
             )
             return
 

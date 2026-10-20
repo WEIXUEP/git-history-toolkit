@@ -41,6 +41,8 @@ class AuditorWindow:
         self.protect_local_var = tk.BooleanVar(value=True)
         self.protect_remote_var = tk.BooleanVar(value=True)
         self.protect_tags_var = tk.BooleanVar(value=True)
+        self.protect_code_var = tk.BooleanVar(value=False)
+        self.protect_text_data_var = tk.BooleanVar(value=False)
         self.scan_gerrit_var = tk.BooleanVar(value=True)
         self.verbose_var = tk.BooleanVar(value=True)
 
@@ -84,6 +86,8 @@ class AuditorWindow:
             ("Protect local branches", self.protect_local_var),
             ("Protect remote-tracking branches", self.protect_remote_var),
             ("Protect tags", self.protect_tags_var),
+            ("Protect code files by suffix", self.protect_code_var),
+            ("Protect text/data files by suffix", self.protect_text_data_var),
             ("Scan Gerrit refs", self.scan_gerrit_var),
             ("Verbose logging", self.verbose_var),
         ]
@@ -189,6 +193,8 @@ class AuditorWindow:
             protect_local_branches=self.protect_local_var.get(),
             protect_remote_branches=self.protect_remote_var.get(),
             protect_tags=self.protect_tags_var.get(),
+            protect_code_files=self.protect_code_var.get(),
+            protect_text_data_files=self.protect_text_data_var.get(),
             scan_gerrit_refs=self.scan_gerrit_var.get(),
             include_paths=self._read_paths(self.include_text),
             exclude_paths=self._read_paths(self.exclude_text),
