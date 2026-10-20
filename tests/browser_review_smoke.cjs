@@ -25,20 +25,20 @@ const assert = require('node:assert/strict');
     await page.selectOption('#suffix', '');
     await page.click('#clear');
     assert.equal(await page.locator('#rows input:checked').count(), 0);
-    await page.setViewportSize({width: 390, height: 844});
-    await page.screenshot({path: path.join(process.argv[3], 'review-mobile.png')});
+    await page.setViewportSize({width: 1100, height: 800});
+    await page.screenshot({path: path.join(process.argv[3], 'review-desktop-compact.png')});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(errors, []);
     if (process.argv[4] === '--save') {
       await page.click('#select');
       await page.fill('#token', 'REVIEW');
       await page.click('#confirm');
-      await page.waitForFunction(() => document.querySelector('#finish').textContent.includes('未执行清理'));
+      await page.waitForFunction(() => document.querySelector('#finish').textContent.includes('No history was changed'));
     } else {
       await page.click('#cancel');
-      await page.waitForFunction(() => document.querySelector('#finish').textContent.includes('已取消'));
+      await page.waitForFunction(() => document.querySelector('#finish').textContent.includes('Cancelled'));
     }
-    console.log('Desktop/mobile, suffix selection, confirmation gating and review decision passed.');
+    console.log('Desktop layouts, suffix selection, confirmation gating and review decision passed.');
   } finally {
     await browser.close();
   }

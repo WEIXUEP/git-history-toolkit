@@ -10,9 +10,11 @@ asset dependency. A modern local browser is the only UI requirement.
 python '<skill>/scripts/git_history_toolkit.py' audit --repo '<repo>' --output-dir '<external-report>' --review-html
 ```
 
-The default browser opens a local URL. The table contains exact byte size
-(in details/hover), readable MiB/GiB sizes, suffix categories, all historical
-paths, status, protection/candidate reason, and two different UTC timestamps:
+The default browser opens a local URL with an English desktop interface.
+The table prioritizes historical paths, readable MiB/GiB and exact byte sizes,
+latest presence and status. Expand Details for object SHA, all historical
+paths, protection/candidate reason and reference-change time. The two UTC
+timestamps have different meanings:
 
 - Historical latest presence: the maximum committer time among all locally
   reachable commit snapshots that contain that blob, including HEAD. It can
@@ -86,7 +88,7 @@ timeout. Do not treat saved HTML or a crafted HTTP request as user consent.
 Developer-only visual smoke test: with Playwright and its browser installed,
 run `node tests/browser_review_smoke.cjs <read-only-review-URL> <screenshot-directory>`
 from the repository. BROWSER_CHANNEL may select an installed channel such as
-msedge. This exercises filtering, selection, disabled confirmation, desktop
-and mobile layout, then cancels the read-only session. Add --save to test saving
+msedge. This exercises filtering, selection, disabled confirmation and two
+desktop viewport sizes, then cancels the read-only session. Add --save to test saving
 a review-only selection instead. Node/Playwright are not runtime dependencies
 of the skill.
