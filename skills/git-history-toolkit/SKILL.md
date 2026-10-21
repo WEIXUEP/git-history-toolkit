@@ -1,6 +1,6 @@
 ---
 name: git-history-toolkit
-description: Audit large Git history objects with default HTML review and confirmed cleanup, or migrate squash-subtree directories while preserving host history and upstream synchronization. Supports Git/Gerrit analysis and multiple subtree add/pull verification. Use for oversized repositories, deleted large files and subtree history migration.
+description: Audit large Git history objects with default HTML review and confirmed cleanup, migrate squash-subtree directories while preserving host history and upstream synchronization, and plan Gerrit history publication or branch replacement. Use for oversized repositories, deleted large files, subtree history migration and Gerrit non-fast-forward diagnosis.
 ---
 
 # Git History Toolkit
@@ -43,6 +43,13 @@ uses the module. Check the required command before proposing execution.
   rewrite, regenerate the other operation's audit/plan from its resulting refs.
   Old SHA maps, candidates and remote leases cannot be reused as current state.
   Do not infer approval for both operations from approval of one.
+- For Gerrit history publication, unrelated-history replacement or rejected
+  non-fast-forward updates, read
+  [references/gerrit-history-replacement.md](references/gerrit-history-replacement.md).
+  Diagnose permissions and the actual write endpoint first. Prefer explicit
+  leases. Delete/recreate is a separately approved, non-atomic fallback with
+  verified backups, default-HEAD handling and staged recovery; ordinary push
+  or rewrite approval does not authorize it.
 
 ```powershell
 python '<skill>/scripts/git_history_toolkit.py' audit --repo '<repo>' --output-dir '<external-report>'
@@ -82,6 +89,9 @@ separate confirmation of destination, selected refs, old/new OIDs and explicit
 per-ref force-with-lease commands. Cleanup's optional push workflow additionally
 prompts for PUSH; subtree publish-plan only prepares commands. Failed checks,
 changed refs or a failed lease require renewed review, not a force retry.
+Remote permission probes, ACL/server edits and default-HEAD changes must fit
+the user's explicit remote-operation authorization. Existing CLI publication
+helpers do not execute the delete/recreate fallback.
 Gerrit refs/changes and NoteDb are not ordinary branch history to rewrite.
 Read [references/git-and-gerrit.md](references/git-and-gerrit.md) for auditing
 coverage and [references/subtree-migration.md](references/subtree-migration.md)

@@ -1,5 +1,10 @@
 # Git, Gerrit and recovery
 
+For publishing rewritten/unrelated history, diagnosing rejected force pushes
+or planning approved branch replacement, read
+[gerrit-history-replacement.md](gerrit-history-replacement.md). It covers
+effective permissions, exact-state leases, default HEAD and staged rollback.
+
 ## Establish coverage
 
 Local remote-tracking refs are snapshots. An audit does not prove they match

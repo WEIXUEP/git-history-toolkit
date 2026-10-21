@@ -111,6 +111,11 @@ Refs without the subtree at their tips are explicitly marked not present.
 
 ## Remote publication and collaboration
 
+For Gerrit rejection diagnostics or an explicitly approved delete/recreate
+alternative, read [gerrit-history-replacement.md](gerrit-history-replacement.md).
+That operator workflow is separate from the publication-plan generator below;
+the generator never deletes branches or changes project HEAD.
+
 Prepare a read-only publication plan only after successful verification:
 
 ```powershell

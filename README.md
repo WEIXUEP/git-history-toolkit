@@ -8,6 +8,11 @@ Audits and plans do not rewrite history. Actual cleanup requires CLEANUP;
 migration requires MIGRATE and runs in an independent clone. Remote history
 replacement requires separate confirmation.
 
+The skill also includes a [Gerrit history replacement guide](skills/git-history-toolkit/references/gerrit-history-replacement.md):
+permission diagnosis, leased publication, approved temporary-branch replacement,
+default-HEAD handling and recovery. This is an operator workflow; the CLI does
+not automatically delete remote branches or change Gerrit configuration.
+
 ## Skill
 
 The only skill is [git-history-toolkit](skills/git-history-toolkit/SKILL.md).
