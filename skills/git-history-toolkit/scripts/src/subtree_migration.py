@@ -147,7 +147,10 @@ def plan_migration(repo, moves, selected_refs, output, upstreams=None, allow_sig
                     "split": splits[0].decode(), "mainline": mainlines[0].decode() if mainlines else None}
             metadata.append(item)
             if not mainlines:
-                squash_roots.append(oid)
+                # Destination-side relocation trailers describe host history,
+                # not an upstream squash ancestry domain for this move.
+                if item["dir"] in moves:
+                    squash_roots.append(oid)
             elif subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", item["mainline"], oid],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
                 raise MigrationError(f"Subtree mainline must be an ancestor: {oid}")

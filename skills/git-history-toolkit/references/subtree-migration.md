@@ -56,6 +56,25 @@ silently converted. Signed commits/tags require explicit acknowledgement
 using `--allow-signature-removal`; signatures cannot survive SHA changes.
 Reports and workspaces must be external to the source repository.
 
+Squash-root candidates must have no mainline trailer and must name one of the
+requested source aliases. A no-mainline trailer naming the destination (for
+example an empty host commit after `git mv`) or another subtree must not make
+its host ancestors protected. Independently compare the protected set against
+known upstream/synthetic chains and affected commits against source-bearing
+host snapshots. The migration verifier also uses the planned protected set;
+a passing verifier alone does not establish that domain identification was
+correct. Original upstream trees may legitimately contain source-like paths,
+so do not indiscriminately unprotect them based on path names alone.
+
+Regenerate plans made before the relocation-protection fix in a new report
+directory. Updating the script does not repair an existing plan's stored
+protected/affected sets; do not reuse its digest or verification report.
+Correct domain counts are necessary but do not certify upstream sync. Native
+subtree can itself mistake a destination-side host trailer without mainline
+for a squash commit. Keep incremental verification enabled; if it rejects
+such history, stop and review the metadata separately rather than claiming
+success or silently changing the host commit's message.
+
 If old `git-subtree-split` objects are no longer local, add
 `--upstream vendor/engine=UPSTREAM_URL_OR_PATH`. After migration approval,
 the tool fetches the exact declared split objects into private local refs

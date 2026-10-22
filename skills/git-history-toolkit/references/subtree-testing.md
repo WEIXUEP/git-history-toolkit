@@ -52,6 +52,29 @@ operations; it does not run a history cleanup.
 
 ## User repository acceptance
 
+The focused protection regression is also packaged:
+
+```powershell
+python '<skill>/scripts/test_subtree_protection.py' -v
+```
+
+It constructs a separate disposable reproduction, supplementing the shared
+fixture above: six synthetic squash commits, six missing real upstream splits,
+212 source-bearing host snapshots, an unrelated subtree, a historical rename,
+and a no-mainline relocation trailer naming the destination. Its expected
+protected and affected sets come from fixture construction, independently of
+the planner/verifier. Expected counts are 6 protected and 212 affected. It
+checks every rewritten affected snapshot, original squash trees, unchanged
+tip/source refs, path log and blame. The invalid destination-side trailer
+also confuses native subtree synchronization, so that scenario must fail the
+incremental check rather than report success. A control history omitting only
+that metadata commit must complete migration with two incremental pulls and
+two repeat checks. The test does not operate on a user's repository.
+
+For a real plan, review protection domains before MIGRATE; destination-side
+metadata must not protect host ancestry. Regenerate old plans in a new report
+directory after the fix, even if an earlier migration verifier reported success.
+
 The migration command automatically checks each selected ref where a migrated
 target exists, using two synthetic additions from its real upstream split and
 two repeated pulls. Inspect verification.json for the actual results; a target

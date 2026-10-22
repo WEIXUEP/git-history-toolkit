@@ -14,6 +14,14 @@ python <skill>/scripts/git_subtree_migrator.py plan --repo <source> --move vendo
 
 Present the concrete plan: source, mappings, selected refs, affected commits, signature removal if any, backup and independent workspace paths. Actual history rewriting requires the user's explicit confirmation of that plan. Request confirmation immediately before mutation; do not pipe MIGRATE automatically for real repositories. An approved disposable integration test may supply its own confirmation.
 
+Independently review protected ancestry and source-bearing host snapshots;
+destination-side no-mainline metadata must not protect the host chain. Plans
+created before the relocation-protection fix must be regenerated in a new
+report directory. Correct counts alone do not establish upstream sync: malformed
+destination-side trailers can also confuse native subtree pull. Preserve failed
+verification evidence and review that metadata separately, without bypassing
+checks or silently modifying additional commit messages.
+
 ```shell
 python <skill>/scripts/git_subtree_migrator.py migrate --plan <new-report>/plan.json --workspace <new-independent-clone>
 ```

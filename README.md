@@ -206,3 +206,10 @@ The packaged [multi-subtree regression](skills/git-history-toolkit/references/su
 can run independently: four new adds, four migrated paths, six final projects,
 30 update pulls and 30 repeat checks, preserving local and unrelated content.
 Tests run in disposable clones and do not replace remote history.
+
+The focused `tests/test_subtree_protection.py` regression independently checks
+six protected squash commits and 212 affected host snapshots after relocation.
+Run the packaged copy as `<skill>/scripts/test_subtree_protection.py -v`.
+Regenerate old plans in a new report directory after this fix; stored protection
+sets are not repaired by updating the scripts. Destination-side host trailers
+may also confuse native subtree pull and must still pass incremental validation.
