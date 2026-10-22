@@ -209,6 +209,8 @@ Tests run in disposable clones and do not replace remote history.
 
 The focused `tests/test_subtree_protection.py` regression independently checks
 six protected squash commits and 212 affected host snapshots after relocation.
+Its mixed submodule/directory scenario expects six protected and 209 affected
+directory snapshots, preserving three root gitlinks and `.gitmodules` unchanged.
 Run the packaged copy as `<skill>/scripts/test_subtree_protection.py -v`.
 Regenerate old plans in a new report directory after this fix; stored protection
 sets are not repaired by updating the scripts. Destination-side host trailers

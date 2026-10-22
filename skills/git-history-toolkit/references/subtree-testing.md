@@ -75,6 +75,17 @@ For a real plan, review protection domains before MIGRATE; destination-side
 metadata must not protect host ancestry. Regenerate old plans in a new report
 directory after the fix, even if an earlier migration verifier reported success.
 
+The same focused regression covers historical submodule-to-directory changes.
+Its additional scenario has three exact-source gitlink snapshots, an ordinary
+directory copy with a nested gitlink, then squash-subtree history. It expects
+6 protected and 209 affected commits, independently excluding the three root
+gitlink snapshots. It verifies those snapshots and `.gitmodules` are unchanged,
+the nested gitlink's path moves while mode/OID stay intact, and all 209 directory
+snapshots are renamed. The earlier directory-only fixture still expects 212
+affected commits. Unit cases also require ordinary files, executables, symlinks
+and real path collisions to remain rejected. Both scenarios retain the
+destination-metadata rejection/control checks described above.
+
 The migration command automatically checks each selected ref where a migrated
 target exists, using two synthetic additions from its real upstream split and
 two repeated pulls. Inspect verification.json for the actual results; a target

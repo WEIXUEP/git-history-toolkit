@@ -6,11 +6,38 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from src.subtree_migration import MigrationError, configure_identity, git, migrate, plan_migration, refs, text, tree
+from src.subtree_migration import MigrationError, configure_identity, git, migrate, plan_migration, refs, text, transformed, tree
+
+
+class SubtreeGitlinkUnitTests(unittest.TestCase):
+    def test_exact_source_gitlink_stays_and_nested_gitlink_moves(self):
+        link = b"160000 commit " + b"a" * 40
+        modules = b"100644 blob " + b"b" * 40
+        moves = {b"palace": b"fem_core"}
+        self.assertEqual(transformed({b"palace": link, b".gitmodules": modules}, moves),
+                         {b"palace": link, b".gitmodules": modules})
+        self.assertEqual(transformed({b"palace/dep": link}, moves), {b"fem_core/dep": link})
+
+    def test_blob_symlink_and_gitlink_collisions_remain_rejected(self):
+        moves = {b"palace": b"fem_core"}
+        for mode in (b"100644", b"100755", b"120000"):
+            with self.subTest(mode=mode), self.assertRaisesRegex(MigrationError, "source directory was a file"):
+                transformed({b"palace": mode + b" blob " + b"a" * 40}, moves)
+        link = b"160000 commit " + b"a" * 40
+        for entries in ({b"palace/dep": link, b"fem_core/dep": link},
+                        {b"fem_core": link, b"palace/file": b"100644 blob " + b"b" * 40}):
+            with self.subTest(entries=entries), self.assertRaisesRegex(MigrationError, "collision"):
+                transformed(entries, moves)
 
 
 class SubtreeProtectionTests(unittest.TestCase):
     def test_relocated_host_metadata_does_not_protect_host_history(self):
+        self.exercise_history()
+
+    def test_gitlink_directory_and_subtree_eras(self):
+        self.exercise_history(include_gitlinks=True)
+
+    def exercise_history(self, include_gitlinks=False):
         with tempfile.TemporaryDirectory(prefix="subtree-protection-") as temporary:
             root = Path(temporary)
             host, upstream = root / "host", root / "upstream"
@@ -44,10 +71,33 @@ class SubtreeProtectionTests(unittest.TestCase):
             base = commit(host, base_tree, [], "Initialize host")
             tip, upstream_tip, squash_tip = base, None, None
             squash_commits, splits, source_snapshots = [], [], []
+            gitlink_snapshots = []
 
             def host_tree(prefix, library_tree):
                 return make_tree(host, [("README", "100644", "blob", readme),
                                         (prefix, "040000", "tree", library_tree)])
+
+            if include_gitlinks:
+                modules = blob(host, b'[submodule "palace"]\n\tpath = palace\n\turl = https://example.invalid/palace.git\n')
+                for index in range(2):
+                    pointer = str(index + 1) * 40
+                    link_tree = make_tree(host, [("README", "100644", "blob", readme),
+                                                 (".gitmodules", "100644", "blob", modules),
+                                                 ("palace", "160000", "commit", pointer)])
+                    tip = commit(host, link_tree, [tip], f"Historical submodule revision {index}")
+                    gitlink_snapshots.append(tip)
+                tip = commit(host, base_tree, [tip], "Remove historical submodule")
+                manual_tree = make_tree(host, [("lib.txt", "100644", "blob", blob(host, b"Manually copied library\n")),
+                                               ("dep", "160000", "commit", "4" * 40)])
+                manual_copy = commit(host, host_tree("palace", manual_tree), [tip], "Copy library as ordinary directory")
+                tip = manual_copy
+                source_snapshots.append(tip)
+                link_tree = make_tree(host, [("README", "100644", "blob", readme),
+                                             (".gitmodules", "100644", "blob", modules),
+                                             ("palace", "160000", "commit", "3" * 40)])
+                tip = commit(host, link_tree, [tip], "Replace copied directory with submodule")
+                gitlink_snapshots.append(tip)
+                tip = commit(host, base_tree, [tip], "Remove submodule before squash import")
 
             # Transfer only trees/blobs, as a squash import does. None of the
             # six real upstream commit objects is available in the host.
@@ -87,10 +137,10 @@ class SubtreeProtectionTests(unittest.TestCase):
             local_edit = commit(host, current_tree, [tip], "Maintain palace locally")
             tip = local_edit
             source_snapshots.append(tip)
-            for index in range(202):
+            for index in range(198 if include_gitlinks else 202):
                 tip = commit(host, current_tree, [tip], f"Host maintenance {index}")
                 source_snapshots.append(tip)
-            self.assertEqual(len(source_snapshots), 210)
+            self.assertEqual(len(source_snapshots), 207 if include_gitlinks else 210)
 
             renamed_tree = make_tree(host, [("README", "100644", "blob", readme),
                                            ("fem_core", "040000", "tree", local_library),
@@ -119,7 +169,9 @@ class SubtreeProtectionTests(unittest.TestCase):
             # or verifier's protected-set logic.
             self.assertEqual(set(plan["protected_commits"]), set(squash_commits))
             self.assertEqual(set(plan["affected_commits"]), set(source_snapshots))
-            self.assertEqual(len(plan["affected_commits"]), 212)
+            self.assertEqual(len(plan["affected_commits"]), 209 if include_gitlinks else 212)
+            self.assertTrue(set(gitlink_snapshots).isdisjoint(plan["affected_commits"]))
+            self.assertTrue(set(gitlink_snapshots).isdisjoint(plan["protected_commits"]))
             self.assertNotIn(other_squash, plan["protected_commits"])
             self.assertNotIn(relocation, plan["protected_commits"])
 
@@ -137,6 +189,13 @@ class SubtreeProtectionTests(unittest.TestCase):
                 actual = tree(workspace, mapping[old])
                 self.assertNotIn(b"palace/lib.txt", actual)
                 self.assertIn(b"fem_core/lib.txt", actual)
+            for old in gitlink_snapshots:
+                self.assertEqual(tree(workspace, mapping[old]), tree(host, old))
+                self.assertIn(b".gitmodules", tree(workspace, mapping[old]))
+                self.assertTrue(tree(workspace, mapping[old])[b"palace"].startswith(b"160000 commit "))
+            if include_gitlinks:
+                self.assertEqual(tree(workspace, mapping[manual_copy])[b"fem_core/dep"],
+                                 tree(host, manual_copy)[b"palace/dep"])
             for old in squash_commits:
                 self.assertEqual(tree(workspace, mapping[old]), tree(host, old))
             self.assertEqual(tree(workspace, "master"), tree(host, "master"))

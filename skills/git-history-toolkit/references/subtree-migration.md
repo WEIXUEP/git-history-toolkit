@@ -82,6 +82,17 @@ in the clone. It does not re-import the project into the host directory.
 Servers may disallow fetching an unadvertised or expired SHA: resolve such
 cases by obtaining the required original upstream objects, not inventing IDs.
 
+Historical source paths may change between submodule and directory forms.
+An exact-source gitlink (`160000 commit`, for example `palace`) is preserved
+with its original pointer and `.gitmodules` content; it has no `palace/`
+directory prefix to rename and alone does not count as an affected commit.
+Directory snapshots, including copies predating subtree import, are renamed.
+Gitlinks nested inside the source directory move with that directory, retaining
+their mode and target OID. Exact-source ordinary files and symlinks remain
+unsupported/ambiguous and are rejected; collision checks still apply to all
+entries. Inspect the entry modes when comparing counts, rather than counting
+every historical top-level source entry as a changed directory snapshot.
+
 ## Confirm and migrate
 
 Review `plan.json`, selected refs, mappings, affected commits and signatures.

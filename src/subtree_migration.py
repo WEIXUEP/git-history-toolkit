@@ -80,7 +80,9 @@ def pairs(values, paths=False):
 def transformed(entries, moves):
     result = {}
     for path, header in entries.items():
-        if path in moves:
+        # An exact-source gitlink has no directory prefix to map. Preserve its
+        # pointer and .gitmodules content; blobs/symlinks remain ambiguous.
+        if path in moves and not header.startswith(b"160000 commit "):
             raise MigrationError("A source directory was a file in historical commits")
         new = mapped_path(path, moves)
         if new in result:
