@@ -39,6 +39,9 @@ uses the module. Check the required command before proposing execution.
 - For subtree directory/history migration or add/pull verification, read
   [references/subtree-workflow.md](references/subtree-workflow.md). Start with
   an explicit path/ref plan. Keep upstream split identities and root trees.
+  If a host relocation commit impersonates a squash synchronization point,
+  follow the explicit metadata-repair planning workflow before MIGRATE; never
+  bypass incremental pull verification or fabricate mainline trailers.
 - When both are requested, inspect once but run sequentially. After either
   rewrite, regenerate the other operation's audit/plan from its resulting refs.
   Old SHA maps, candidates and remote leases cannot be reused as current state.

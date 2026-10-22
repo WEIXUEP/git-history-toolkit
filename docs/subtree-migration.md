@@ -69,6 +69,28 @@ cases by obtaining the required original upstream objects, not inventing IDs.
 
 ## Confirm and migrate
 
+### Poisoned relocation metadata
+
+An empty host relocation commit with native no-mainline subtree trailers can
+be mistaken for a squash synchronization point. Its host tree becomes a bad
+merge base, causing conflicts or deletion of local additions on future pulls.
+Planning now stops on such records. Repeat planning in a new report directory
+with `--repair-relocation-metadata` to request an explicit repair plan.
+
+Only an empty, single-parent host commit with a reachable genuine squash for
+the same target and split is repairable. Source aliases and destination names
+are inspected. Non-empty or ambiguous records remain blocked. The plan records
+exact before/after messages and the witness squash. Misleading native keys are
+renamed to `git-history-toolkit-original-subtree-*`, preserving their values,
+prose and Change-Id. Genuine squash registrations remain active. No mainline
+or split identity is fabricated. Review `metadata_repairs` before MIGRATE;
+the flag authorizes planning only, and execution still uses an independent clone.
+
+Schema-1 plans must be regenerated. The verification report includes repaired
+old/new SHAs; real incremental pulls must preserve every existing local file.
+See the [skill workflow](../skills/git-history-toolkit/references/subtree-migration.md#repair-poisoned-relocation-metadata)
+for the classification rules and failure boundaries.
+
 Review `plan.json`, selected refs, mappings, affected commits and signatures.
 Coordinate a temporary publishing freeze with collaborators. Then run:
 
@@ -86,7 +108,9 @@ An executed plan is not reused; generate a fresh plan and workspace on retry.
 Only exact `git-subtree-dir` trailer values change to the final prefix.
 `git-subtree-mainline` is translated through the commit mapping;
 `git-subtree-split` continues to name the original upstream commit. Prose,
-Change-Id lines and unrelated messages are unchanged. Empty and degenerate
+Change-Id lines and unrelated messages are unchanged. Explicitly planned
+relocation repairs use historical annotation keys as described above.
+Empty and degenerate
 merge pruning are disabled. `--partial` keeps non-selected refs intact;
 old refs can intentionally retain old objects and consume disk space.
 

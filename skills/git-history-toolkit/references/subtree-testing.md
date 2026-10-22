@@ -65,11 +65,14 @@ and a no-mainline relocation trailer naming the destination. Its expected
 protected and affected sets come from fixture construction, independently of
 the planner/verifier. Expected counts are 6 protected and 212 affected. It
 checks every rewritten affected snapshot, original squash trees, unchanged
-tip/source refs, path log and blame. The invalid destination-side trailer
-also confuses native subtree synchronization, so that scenario must fail the
-incremental check rather than report success. A control history omitting only
-that metadata commit must complete migration with two incremental pulls and
-two repeat checks. The test does not operate on a user's repository.
+tip/source refs, path log and blame. Default planning rejects the poisoned
+destination-side trailer. Explicit repair planning records one exact message
+repair; confirmed disposable migration must pass two incremental pulls and two
+repeat checks. Local files modified before and after relocation remain intact,
+as does a local addition unchanged since relocation (previously liable to silent
+deletion). A control history omitting only that metadata commit passes without
+repairs. Non-empty metadata, unknown splits and missing squash ancestry remain
+rejected even with repair enabled. The test does not operate on a user's repository.
 
 For a real plan, review protection domains before MIGRATE; destination-side
 metadata must not protect host ancestry. Regenerate old plans in a new report
@@ -84,7 +87,7 @@ the nested gitlink's path moves while mode/OID stay intact, and all 209 director
 snapshots are renamed. The earlier directory-only fixture still expects 212
 affected commits. Unit cases also require ordinary files, executables, symlinks
 and real path collisions to remain rejected. Both scenarios retain the
-destination-metadata rejection/control checks described above.
+destination-metadata rejection/repair/control checks described above.
 
 The migration command automatically checks each selected ref where a migrated
 target exists, using two synthetic additions from its real upstream split and

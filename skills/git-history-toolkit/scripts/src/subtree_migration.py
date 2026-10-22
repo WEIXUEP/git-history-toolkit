@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-from .subtree_filter import mapped_path, rewrite_message
+from .subtree_filter import mapped_path, neutralize_relocation, rewrite_message
 
 
 class MigrationError(RuntimeError):
@@ -99,7 +99,56 @@ def digest(plan):
     return hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
 
 
-def plan_migration(repo, moves, selected_refs, output, upstreams=None, allow_signatures=False):
+def classify_subtree_metadata(repo, metadata, moves, raw_upstream, repair_relocations=False):
+    """Identify squash-only parent chains, and narrowly proven host markers."""
+    domains, repairs = {}, []
+    for item in metadata:
+        oid, directory = item["commit"], item["dir"]
+        if oid in raw_upstream or directory not in set(moves) | set(moves.values()):
+            continue
+        target = moves.get(directory, directory)
+        fields, message = commit_data(repo, oid)
+        parents = [value.decode() for value in fields.get(b"parent", [])]
+        if item["mainline"]:
+            if len(parents) != 2:
+                raise MigrationError(f"Ambiguous subtree mainline registration at {oid}; expected two parents")
+            continue
+        if not parents or (len(parents) == 1 and domains.get(parents[0]) == target):
+            resolved = git(repo, "rev-parse", "--verify", item["split"] + "^{tree}", check=False).strip()
+            if resolved and resolved != fields[b"tree"][0]:
+                raise MigrationError(f"Squash tree does not match declared upstream split at {oid}")
+            domains[oid] = target
+            continue
+        # Only an empty, single-parent host commit with a reachable genuine
+        # same-split squash is repairable. Do not guess from its subject.
+        candidates = [prior for prior in metadata if prior["commit"] in domains
+                      and domains[prior["commit"]] == target and prior["split"] == item["split"]]
+        witness = None
+        if len(parents) == 1 and fields[b"tree"] == commit_data(repo, parents[0])[0][b"tree"]:
+            paths = tree(repo, oid)
+            prefixes = {target, *(old for old, new in moves.items() if new == target)}
+            if any(path.startswith(prefix.encode() + b"/") for path in paths for prefix in prefixes):
+                ancestors = set(text(repo, "rev-list", parents[0]).splitlines())
+                witness = next((prior for prior in reversed(candidates) if prior["commit"] in ancestors
+                                and commit_data(repo, prior["commit"])[0][b"tree"] != fields[b"tree"]), None)
+        if witness is None:
+            raise MigrationError(f"Ambiguous no-mainline subtree metadata at {oid} ({directory}); "
+                                 "not a proven squash chain or empty host relocation; inspect before migrating")
+        if not repair_relocations:
+            raise MigrationError(f"Host relocation metadata poisons subtree synchronization at {oid} ({directory}); "
+                                 "generate a new plan with --repair-relocation-metadata to review its message repair")
+        repaired = neutralize_relocation(message)
+        repairs.append({"commit": oid, "dir": directory, "split": item["split"], "parent": parents[0],
+                        "tree": fields[b"tree"][0].decode(), "squash_commit": witness["commit"],
+                        "reason": "Empty host commit impersonates a same-split squash synchronization point",
+                        "original_message": message.decode("utf-8", "replace"),
+                        "repaired_message": repaired.decode("utf-8", "replace"),
+                        "original_message_hex": message.hex(), "repaired_message_hex": repaired.hex()})
+    return list(domains), repairs
+
+
+def plan_migration(repo, moves, selected_refs, output, upstreams=None, allow_signatures=False,
+                   repair_relocations=False):
     repo = Path(repo).resolve()
     root = Path(text(repo, "rev-parse", "--show-toplevel")).resolve()
     if text(root, "rev-parse", "--is-shallow-repository") == "true":
@@ -133,7 +182,7 @@ def plan_migration(repo, moves, selected_refs, output, upstreams=None, allow_sig
             raise MigrationError(f"Select an existing full branch/tag ref: {ref}")
         text(root, "rev-parse", ref + "^{commit}")
     commits = text(root, "rev-list", "--reverse", "--topo-order", *selected_refs).splitlines()
-    metadata, squash_roots, raw_upstream = [], [], set()
+    metadata, raw_upstream = [], set()
     signed = []
     for oid in commits:
         fields, message = commit_data(root, oid)
@@ -148,26 +197,24 @@ def plan_migration(repo, moves, selected_refs, output, upstreams=None, allow_sig
             item = {"commit": oid, "dir": dirs[0].decode().rstrip("/"),
                     "split": splits[0].decode(), "mainline": mainlines[0].decode() if mainlines else None}
             metadata.append(item)
-            if not mainlines:
-                # Destination-side relocation trailers describe host history,
-                # not an upstream squash ancestry domain for this move.
-                if item["dir"] in moves:
-                    squash_roots.append(oid)
-            elif subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", item["mainline"], oid],
+            if mainlines and subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", item["mainline"], oid],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
                 raise MigrationError(f"Subtree mainline must be an ancestor: {oid}")
             resolved = git(root, "rev-parse", "--verify", item["split"] + "^{commit}", check=False).strip()
             if resolved == item["split"].encode():
                 raw_upstream.update(text(root, "rev-list", item["split"]).splitlines())
-    squash_roots = [oid for oid in squash_roots if oid not in raw_upstream]
+    squash_roots, repairs = classify_subtree_metadata(root, metadata, moves, raw_upstream, repair_relocations)
+    repaired_commits = {item["commit"] for item in repairs}
     protected = set(raw_upstream)
     if squash_roots:
         protected.update(text(root, "rev-list", *squash_roots).splitlines())
-    relevant = [item for item in metadata if item["dir"] in moves and item["commit"] not in raw_upstream]
+    relevant = [dict(item, target=moves.get(item["dir"], item["dir"])) for item in metadata
+                if item["dir"] in set(moves) | set(moves.values())
+                and item["commit"] not in raw_upstream | repaired_commits]
     if not relevant or any(old not in {item["dir"] for item in relevant} for old in moves):
         # An alias introduced with git mv may have no subtree trailer; allow it
         # if another alias of the same destination has a verified squash trailer.
-        covered = {moves[item["dir"]] for item in relevant}
+        covered = {item["target"] for item in relevant}
         if not relevant or any(target not in covered for target in moves.values()):
             raise MigrationError("Each target needs an existing squash-subtree trailer; non-squash imports are unsupported")
     if not any(item["commit"] in squash_roots for item in relevant):
@@ -195,15 +242,19 @@ def plan_migration(repo, moves, selected_refs, output, upstreams=None, allow_sig
         raise MigrationError(f"No main-repository directory history found for: {sorted(set(moves) - seen)}")
     if refs(root) != snapshot:
         raise MigrationError("Source refs changed during planning; retry without concurrent Git operations")
-    plan = {"schema_version": 1, "source": str(root), "moves": moves, "refs": selected_refs,
+    plan = {"schema_version": 2, "source": str(root), "moves": moves, "refs": selected_refs,
             "source_refs": snapshot, "commits": commits, "protected_commits": sorted(protected),
             "metadata": relevant, "metadata_commits": [item["commit"] for item in relevant],
+            "metadata_repairs": repairs,
             "upstreams": upstreams or {}, "affected_commits": affected, "signed_objects": signed,
             "created_at": datetime.now(timezone.utc).isoformat(), "status": "planned"}
     output.mkdir(parents=True)
     write_json(output / "plan.json", plan)
     write_json(output / "plan.sha256.json", {"sha256": digest(plan)})
-    print(f"Plan: {output / 'plan.json'}\nSelected commits: {len(commits)}; path changes: {len(affected)}")
+    print(f"Plan: {output / 'plan.json'}\nSelected commits: {len(commits)}; path changes: {len(affected)}; "
+          f"metadata repairs: {len(repairs)}")
+    for repair in repairs:
+        print(f"Message repair {repair['commit']} ({repair['dir']}): {repair['reason']}")
     return output / "plan.json"
 
 
@@ -225,7 +276,7 @@ def verify_incremental(workspace, plan, report):
                 probes.append({"ref": ref, "target": target, "status": "not-present-at-tip"})
                 continue
             latest = next((by_commit[oid] for oid in history if oid in by_commit
-                           and plan["moves"][by_commit[oid]["dir"]] == target), None)
+                           and by_commit[oid]["target"] == target), None)
             if latest is None:
                 raise MigrationError(f"No reachable squash metadata for {ref}:{target}")
             directory = report / f"probe-{len(probes):02d}"
@@ -277,6 +328,8 @@ def migrate(plan_path, workspace, confirm=input):
     plan_path = Path(plan_path).resolve()
     report = plan_path.parent
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    if plan.get("schema_version") != 2:
+        raise MigrationError("Regenerate the plan in a new directory to inspect relocation metadata before migrating")
     if digest(plan) != json.loads((report / "plan.sha256.json").read_text())["sha256"]:
         raise MigrationError("Plan content changed; generate a new plan")
     if (report / "before_migration.bundle").exists():
@@ -291,7 +344,8 @@ def migrate(plan_path, workspace, confirm=input):
     except ImportError:
         raise MigrationError("Install git-filter-repo in this Python environment first") from None
     print(json.dumps({"source": str(source), "workspace": str(workspace), "moves": plan["moves"],
-                      "rewritten_refs": plan["refs"], "backup": str(report / "before_migration.bundle")}, indent=2))
+                      "rewritten_refs": plan["refs"], "metadata_repairs": plan["metadata_repairs"],
+                      "backup": str(report / "before_migration.bundle")}, indent=2))
     try:
         approved = confirm("Type MIGRATE to rewrite history in the independent clone: ").strip() == "MIGRATE"
     except (EOFError, KeyboardInterrupt):
@@ -316,6 +370,11 @@ def migrate(plan_path, workspace, confirm=input):
             if git(source, "rev-parse", "--verify", split + "^{commit}", check=False).strip() != split.encode():
                 remote = plan["upstreams"].get(item["dir"])
                 if not remote:
+                    sources = {plan["upstreams"][old] for old, target in plan["moves"].items()
+                               if target == item["target"] and old in plan["upstreams"]}
+                    if len(sources) == 1:
+                        remote = sources.pop()
+                if not remote:
                     raise MigrationError(f"Missing original upstream object {split}; plan again with --upstream {item['dir']}=SOURCE")
             text(workspace, "fetch", "--no-tags", remote, split)
         text(workspace, "update-ref", "refs/toolkit/upstream/" + split, split)
@@ -335,6 +394,7 @@ def migrate(plan_path, workspace, confirm=input):
             raise MigrationError("Unexpected duplicate/collapsed commits")
         byte_moves = {old.encode(): new.encode() for old, new in plan["moves"].items()}
         protected, metadata = set(plan["protected_commits"]), set(plan["metadata_commits"])
+        repairs = {item["commit"]: item for item in plan["metadata_repairs"]}
         for old in plan["commits"]:
             new = mapping[old]
             expected = tree(source, old)
@@ -351,6 +411,13 @@ def migrate(plan_path, workspace, confirm=input):
             if after.get(b"parent", []) != expected_parents:
                 raise MigrationError(f"Commit topology changed: {old}")
             expected_message = rewrite_message(message, byte_moves, lambda sha: mapping.get(sha.decode(), sha.decode()).encode()) if old in metadata else message
+            if old in repairs:
+                repair = repairs[old]
+                if message != bytes.fromhex(repair["original_message_hex"]):
+                    raise MigrationError(f"Original relocation message changed: {old}")
+                expected_message = bytes.fromhex(repair["repaired_message_hex"])
+                if expected_message != neutralize_relocation(message):
+                    raise MigrationError(f"Unexpected relocation repair in plan: {old}")
             if new_message != expected_message:
                 raise MigrationError(f"Unexpected commit message change: {old}")
         after_refs = refs(workspace)
@@ -390,6 +457,8 @@ def migrate(plan_path, workspace, confirm=input):
         result = {"status": "passed", "plan_digest": digest(plan), "workspace": str(workspace), "checked_commits": len(plan["commits"]),
                   "commit_map": str(report / "commit-map.txt"), "moves": plan["moves"],
                   "log_checks": log_checks, "blame_checks": blame_checks, "incremental_checks": probes,
+                  "metadata_repairs": [{"old": oid, "new": mapping[oid], "reason": repair["reason"]}
+                                       for oid, repair in repairs.items()],
                   "remote_updates": [{"ref": ref, "old": plan["source_refs"][ref], "new": after_refs[ref]} for ref in plan["refs"]],
                   "source_unchanged": True, "push_executed": False}
         write_json(report / "verification.json", result)
@@ -452,6 +521,8 @@ def main(argv=None):
     plan.add_argument("--output-dir", required=True)
     plan.add_argument("--upstream", action="append", default=[], metavar="OLD=SOURCE")
     plan.add_argument("--allow-signature-removal", action="store_true")
+    plan.add_argument("--repair-relocation-metadata", action="store_true",
+                      help="Plan explicit message repairs for proven empty host relocation registrations")
     execute = commands.add_parser("migrate", help="Confirm, rewrite an independent clone, and verify it")
     execute.add_argument("--plan", required=True)
     execute.add_argument("--workspace", required=True)
@@ -462,7 +533,7 @@ def main(argv=None):
     try:
         if args.command == "plan":
             plan_migration(args.repo, pairs(args.move, True), args.selected_refs, args.output_dir,
-                           pairs(args.upstream), args.allow_signature_removal)
+                           pairs(args.upstream), args.allow_signature_removal, args.repair_relocation_metadata)
         elif args.command == "migrate":
             migrate(args.plan, args.workspace)
         else:

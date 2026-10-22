@@ -56,24 +56,48 @@ silently converted. Signed commits/tags require explicit acknowledgement
 using `--allow-signature-removal`; signatures cannot survive SHA changes.
 Reports and workspaces must be external to the source repository.
 
-Squash-root candidates must have no mainline trailer and must name one of the
-requested source aliases. A no-mainline trailer naming the destination (for
-example an empty host commit after `git mv`) or another subtree must not make
-its host ancestors protected. Independently compare the protected set against
+Squash-root candidates must name a source alias or its destination, have no
+mainline trailer, and form an orphan-rooted squash-only parent chain for that
+target. When available, their tree must match the declared upstream split;
+missing split objects are fetched and checked during migration. Host relocation
+trailers and unrelated subtree metadata must not protect host ancestry.
+Independently compare the protected set against
 known upstream/synthetic chains and affected commits against source-bearing
 host snapshots. The migration verifier also uses the planned protected set;
 a passing verifier alone does not establish that domain identification was
 correct. Original upstream trees may legitimately contain source-like paths,
 so do not indiscriminately unprotect them based on path names alone.
 
-Regenerate plans made before the relocation-protection fix in a new report
-directory. Updating the script does not repair an existing plan's stored
-protected/affected sets; do not reuse its digest or verification report.
-Correct domain counts are necessary but do not certify upstream sync. Native
-subtree can itself mistake a destination-side host trailer without mainline
-for a squash commit. Keep incremental verification enabled; if it rejects
-such history, stop and review the metadata separately rather than claiming
-success or silently changing the host commit's message.
+Regenerate pre-schema-2 plans in a new report directory. Updating the script
+does not repair stored protection sets or authorize additional message changes.
+
+### Repair poisoned relocation metadata
+
+Native subtree can mistake a host commit bearing no-mainline subtree trailers
+for the latest squash. Its host tree then becomes the merge base, causing
+conflicts or deletion of local files even for a marker-only upstream update.
+Default planning stops with the offending SHA. For a proven empty relocation,
+repeat the plan command with `--repair-relocation-metadata` and a new output
+directory. Inspect `metadata_repairs` before confirming MIGRATE.
+
+Repair requires one parent, an unchanged parent tree containing the host
+subtree, and a reachable genuine squash for the same target and split whose
+root tree differs from the host tree. Source aliases and destination prefixes
+are both inspected. Unknown splits without a matching squash, non-empty host
+records and ambiguous ancestry remain blocked even with the flag.
+
+The plan records exact original/repaired messages, the witness squash and
+reason. Only the misleading registration keys become historical annotations:
+`git-subtree-dir` becomes `git-history-toolkit-original-subtree-dir` (likewise
+split/mainline keys). Original values, prose and Change-Id stay intact. Genuine
+squash registrations retain native keys and migrate to the final prefix.
+Never fabricate a mainline trailer or a new split to hide the problem.
+MIGRATE explicitly covers these disclosed message edits in the independent
+clone; the source is unchanged. Trees, identities and topology still undergo
+per-commit verification, and real incremental pulls must pass. The verification
+report records repaired old/new SHAs. Counts such as 6 protected / 209 affected
+are separate from the number of message repairs; derive them from the actual
+repository rather than treating fixture counts as universal.
 
 If old `git-subtree-split` objects are no longer local, add
 `--upstream vendor/engine=UPSTREAM_URL_OR_PATH`. After migration approval,
@@ -112,7 +136,9 @@ An executed plan is not reused; generate a fresh plan and workspace on retry.
 Only exact `git-subtree-dir` trailer values change to the final prefix.
 `git-subtree-mainline` is translated through the commit mapping;
 `git-subtree-split` continues to name the original upstream commit. Prose,
-Change-Id lines and unrelated messages are unchanged. Empty and degenerate
+Change-Id lines and unrelated messages are unchanged. Explicitly planned
+relocation repairs use the historical annotation keys described above.
+Empty and degenerate
 merge pruning are disabled. `--partial` keeps non-selected refs intact;
 old refs can intentionally retain old objects and consume disk space.
 

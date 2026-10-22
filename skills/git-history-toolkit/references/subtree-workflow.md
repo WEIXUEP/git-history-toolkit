@@ -16,11 +16,15 @@ Present the concrete plan: source, mappings, selected refs, affected commits, si
 
 Independently review protected ancestry and source-bearing host snapshots;
 destination-side no-mainline metadata must not protect the host chain. Plans
-created before the relocation-protection fix must be regenerated in a new
-report directory. Correct counts alone do not establish upstream sync: malformed
-destination-side trailers can also confuse native subtree pull. Preserve failed
-verification evidence and review that metadata separately, without bypassing
-checks or silently modifying additional commit messages.
+created before schema 2 must be regenerated in a new report directory.
+Correct counts alone do not establish upstream sync: malformed destination-side
+trailers can also confuse native subtree pull. Planning stops on these records.
+For a proven empty host relocation, rerun plan with
+`--repair-relocation-metadata` in a new report directory. Review each
+`metadata_repairs` entry, including its original/repaired messages and reachable
+same-split squash witness, before requesting MIGRATE. The flag only plans
+repairs; it does not authorize execution. Ambiguous or non-empty host metadata
+still blocks migration. See [subtree-migration.md](subtree-migration.md).
 
 ```shell
 python <skill>/scripts/git_subtree_migrator.py migrate --plan <new-report>/plan.json --workspace <new-independent-clone>

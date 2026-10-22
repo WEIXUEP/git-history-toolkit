@@ -6,10 +6,19 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from src.subtree_migration import MigrationError, configure_identity, git, migrate, plan_migration, refs, text, transformed, tree
+from src.subtree_filter import neutralize_relocation
+from src.subtree_migration import MigrationError, classify_subtree_metadata, commit_data, configure_identity, git, migrate, plan_migration, refs, text, transformed, tree
 
 
 class SubtreeGitlinkUnitTests(unittest.TestCase):
+    def test_neutralization_preserves_exact_values_prose_and_line_endings(self):
+        message = (b"Relocate palace\r\n\r\nChange-Id: I123\r\n"
+                   b"git-subtree-dir: fem_core\r\ngit-subtree-split: " + b"a" * 40 + b"\r\n")
+        actual = neutralize_relocation(message)
+        self.assertEqual(actual, message.replace(b"git-subtree-", b"git-history-toolkit-original-subtree-"))
+        self.assertNotIn(b"\ngit-subtree-dir:", actual)
+        self.assertIn(b"Change-Id: I123\r\n", actual)
+
     def test_exact_source_gitlink_stays_and_nested_gitlink_moves(self):
         link = b"160000 commit " + b"a" * 40
         modules = b"100644 blob " + b"b" * 40
@@ -130,7 +139,9 @@ class SubtreeProtectionTests(unittest.TestCase):
             tip = commit(host, current_tree, [tip, other_squash], "Import unrelated subtree")
             source_snapshots.append(tip)
             local_library = make_tree(host, [("lib.txt", "100644", "blob", blob(
-                host, b"locally maintained first line\nversion 5\n"))])
+                host, b"locally maintained first line\nversion 5\n")),
+                ("LOCAL_README.md", "100644", "blob", blob(host, b"Local guide before relocation\n")),
+                ("LOCAL_CHANGELOG.md", "100644", "blob", blob(host, b"Local additions must never disappear\n"))])
             current_tree = make_tree(host, [("README", "100644", "blob", readme),
                                            ("palace", "040000", "tree", local_library),
                                            ("other", "040000", "tree", other_tree)])
@@ -147,21 +158,33 @@ class SubtreeProtectionTests(unittest.TestCase):
                                            ("other", "040000", "tree", other_tree)])
             rename = commit(host, renamed_tree, [tip], "Rename palace")
             relocation = commit(host, renamed_tree, [rename], "Relocate palace subtree\n\n"
-                                f"git-subtree-dir: fem_core\ngit-subtree-split: {upstream_tip}")
+                                f"Change-Id: I123\ngit-subtree-dir: fem_core\ngit-subtree-split: {upstream_tip}")
+            final_library = make_tree(host, [("lib.txt", "100644", "blob", blob(
+                host, b"locally maintained first line\nversion 5 locally protected\n")),
+                ("LOCAL_README.md", "100644", "blob", blob(host, b"Local guide modified after relocation\n")),
+                ("LOCAL_CHANGELOG.md", "100644", "blob", blob(host, b"Local additions must never disappear\n"))])
+            final_tree = make_tree(host, [("README", "100644", "blob", readme),
+                                         ("fem_core", "040000", "tree", final_library),
+                                         ("other", "040000", "tree", other_tree)])
+            post_relocation = commit(host, final_tree, [relocation], "Protect local code after relocation")
             side_tip = anchor
             side_tree = host_tree("palace", library_tree)
             for index in range(2):
                 side_tip = commit(host, side_tree, [side_tip], f"Side maintenance {index}")
                 source_snapshots.append(side_tip)
-            tip = commit(host, renamed_tree, [relocation, side_tip], "Merge side work after relocation")
+            tip = commit(host, final_tree, [post_relocation, side_tip], "Merge side work after relocation")
             text(host, "update-ref", "refs/heads/master", tip)
             text(host, "checkout", "master")
             before = refs(host)
             for split in splits:
                 self.assertEqual(git(host, "rev-parse", "--verify", split + "^{commit}", check=False), b"")
 
+            with self.assertRaisesRegex(MigrationError, "--repair-relocation-metadata"):
+                plan_migration(host, {"palace": "fem_core"}, ["refs/heads/master"], root / "blocked-plan",
+                               upstreams={"palace": str(upstream)})
+            self.assertFalse((root / "blocked-plan").exists())
             path = plan_migration(host, {"palace": "fem_core"}, ["refs/heads/master"], root / "plan",
-                                  upstreams={"palace": str(upstream)})
+                                  upstreams={"palace": str(upstream)}, repair_relocations=True)
             plan = json.loads(path.read_text())
             print(f"Protection regression: {len(plan['protected_commits'])} protected, "
                   f"{len(plan['affected_commits'])} affected")
@@ -174,14 +197,34 @@ class SubtreeProtectionTests(unittest.TestCase):
             self.assertTrue(set(gitlink_snapshots).isdisjoint(plan["protected_commits"]))
             self.assertNotIn(other_squash, plan["protected_commits"])
             self.assertNotIn(relocation, plan["protected_commits"])
+            self.assertEqual(len(plan["metadata_repairs"]), 1)
+            repair = plan["metadata_repairs"][0]
+            self.assertEqual(repair["commit"], relocation)
+            self.assertEqual(repair["squash_commit"], squash_tip)
+            self.assertEqual(bytes.fromhex(repair["original_message_hex"]), commit_data(host, relocation)[1])
+            self.assertEqual(bytes.fromhex(repair["repaired_message_hex"]), neutralize_relocation(commit_data(host, relocation)[1]))
 
-            # A destination-side host trailer is also invalid squash metadata
-            # to native subtree. The independent pull check must reject it,
-            # even though path migration itself is now correct.
-            with self.assertRaisesRegex(MigrationError, "Incremental subtree pull modified"):
-                migrate(path, root / "rewritten", confirm=lambda _: "MIGRATE")
-            result = json.loads((path.parent / "verification.json").read_text())
-            self.assertEqual(result["status"], "failed")
+            # Same-prefix host metadata must not become a squash domain either.
+            known = [dict(item) for item in plan["metadata"]]
+            source_relocation = commit(host, renamed_tree, [rename], "Host source marker\n\n"
+                                       f"git-subtree-dir: palace\ngit-subtree-split: {upstream_tip}")
+            entry = {"commit": source_relocation, "dir": "palace", "split": upstream_tip, "mainline": None}
+            domains, source_repairs = classify_subtree_metadata(host, [*known, entry], {"palace": "fem_core"}, set(), True)
+            self.assertEqual(set(domains), set(squash_commits))
+            self.assertEqual(source_repairs[0]["commit"], source_relocation)
+            for invalid_tree, split, parents in ((final_tree, upstream_tip, [rename]),
+                                                  (renamed_tree, "f" * 40, [rename]),
+                                                  (renamed_tree, upstream_tip, [base])):
+                invalid = commit(host, invalid_tree, parents, "Unproven relocation")
+                bad = dict(entry, commit=invalid, dir="fem_core", split=split)
+                with self.assertRaisesRegex(MigrationError, "Ambiguous no-mainline"):
+                    classify_subtree_metadata(host, [*known, bad], {"palace": "fem_core"}, set(), True)
+
+            self.assertIsNone(migrate(path, root / "cancelled", confirm=lambda _: ""))
+            self.assertFalse((path.parent / "before_migration.bundle").exists())
+            self.assertFalse((root / "cancelled").exists())
+            result = migrate(path, root / "rewritten", confirm=lambda _: "MIGRATE")
+            self.assertEqual(result["status"], "passed")
             self.assertFalse(result["push_executed"])
             workspace = root / "rewritten"
             mapping = dict(line.split() for line in (path.parent / "commit-map.txt").read_text().splitlines()[1:])
@@ -199,15 +242,22 @@ class SubtreeProtectionTests(unittest.TestCase):
             for old in squash_commits:
                 self.assertEqual(tree(workspace, mapping[old]), tree(host, old))
             self.assertEqual(tree(workspace, "master"), tree(host, "master"))
+            self.assertEqual(commit_data(workspace, mapping[relocation])[1], bytes.fromhex(repair["repaired_message_hex"]))
+            self.assertEqual(len(result["metadata_repairs"]), 1)
+            self.assertEqual(result["metadata_repairs"][0]["new"], mapping[relocation])
+            for probe in result["incremental_checks"]:
+                self.assertEqual(probe["status"], "passed")
+                self.assertEqual(probe["incremental_pulls"], 2)
+                self.assertEqual(probe["idempotency_checks"], 2)
             self.assertIn(mapping[local_edit], text(workspace, "log", "--format=%H", "master", "--", "fem_core").splitlines())
             blame = text(workspace, "blame", "--line-porcelain", "master", "--", "fem_core/lib.txt")
             self.assertIn(mapping[local_edit], blame)
             self.assertIn("locally maintained first line", blame)
             self.assertEqual(refs(host), before)
 
-            # Control history differs only by omitting the invalid relocation
-            # metadata commit. Confirm normal incremental sync still succeeds.
-            control_tip = commit(host, renamed_tree, [rename, side_tip], "Merge side work without metadata override")
+            # A control without the invalid marker needs no metadata repairs.
+            control_post = commit(host, final_tree, [rename], "Protect local code without metadata override")
+            control_tip = commit(host, final_tree, [control_post, side_tip], "Merge side work without metadata override")
             text(host, "update-ref", "refs/heads/control", control_tip)
             control_before = refs(host)
             control_path = plan_migration(host, {"palace": "fem_core"}, ["refs/heads/control"],
@@ -215,6 +265,7 @@ class SubtreeProtectionTests(unittest.TestCase):
             control_plan = json.loads(control_path.read_text())
             self.assertEqual(set(control_plan["protected_commits"]), set(squash_commits))
             self.assertEqual(set(control_plan["affected_commits"]), set(source_snapshots))
+            self.assertEqual(control_plan["metadata_repairs"], [])
             control_result = migrate(control_path, root / "control-rewritten", confirm=lambda _: "MIGRATE")
             self.assertEqual(control_result["status"], "passed")
             self.assertEqual(len(control_result["incremental_checks"]), 1)

@@ -177,6 +177,14 @@ selected commit's expected tree. Original upstream root trees and split IDs
 remain distinct from host prefixes. Isolated upstream increments and repeated
 pulls verify synchronization.
 
+If a host relocation commit carries misleading squash trailers, planning stops
+with its SHA. Replan into a new directory with `--repair-relocation-metadata`
+to include a narrowly verified empty-host metadata repair. Review the exact
+before/after messages in `metadata_repairs` before MIGRATE. The original values
+become historical annotation fields; genuine squash associations stay active.
+Ambiguous/non-empty registrations remain blocked. Old plans must be regenerated
+(schema 2). See the [repair workflow](skills/git-history-toolkit/references/subtree-migration.md#repair-poisoned-relocation-metadata).
+
 publish-plan reads destination refs and prepares explicit leased commands;
 it never pushes. Platform protection and Gerrit force/forge permissions need
 separate review. Squashed original upstream per-file history cannot be

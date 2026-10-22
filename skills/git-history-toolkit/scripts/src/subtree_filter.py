@@ -5,6 +5,20 @@ from pathlib import Path
 import sys
 
 
+def neutralize_relocation(message):
+    """Retain misleading registration values without native subtree keys."""
+    keys = (b"dir", b"split", b"mainline")
+    result = []
+    for line in message.splitlines(keepends=True):
+        for key in keys:
+            prefix = b"git-subtree-" + key + b": "
+            if line.startswith(prefix):
+                line = b"git-history-toolkit-original-subtree-" + key + b": " + line[len(prefix):]
+                break
+        result.append(line)
+    return b"".join(result)
+
+
 def rewrite_message(message, moves, translate):
     lines = message.splitlines(keepends=True)
     selected = False
@@ -41,6 +55,7 @@ def run(plan_path):
     moves = {old.encode(): new.encode() for old, new in plan["moves"].items()}
     protected = {oid.encode() for oid in plan["protected_commits"]}
     metadata = {oid.encode() for oid in plan["metadata_commits"]}
+    repairs = {item["commit"].encode(): item for item in plan.get("metadata_repairs", [])}
 
     def callback(commit, info):
         if commit.original_id not in protected:
@@ -49,7 +64,14 @@ def run(plan_path):
                     change.filename = mapped_path(change.filename, moves)
             # A historical rename between aliases becomes D+M at one new path.
             commit.file_changes.sort(key=lambda change: change.type != b"D")
-        if commit.original_id in metadata:
+        if commit.original_id in repairs:
+            repair = repairs[commit.original_id]
+            if commit.message != bytes.fromhex(repair["original_message_hex"]):
+                raise ValueError("Relocation message differs from the approved plan")
+            commit.message = neutralize_relocation(commit.message)
+            if commit.message != bytes.fromhex(repair["repaired_message_hex"]):
+                raise ValueError("Relocation repair differs from the approved plan")
+        elif commit.original_id in metadata:
             commit.message = rewrite_message(commit.message, moves, info["commit_rename_func"])
 
     args = filtering.FilteringOptions.parse_args([
