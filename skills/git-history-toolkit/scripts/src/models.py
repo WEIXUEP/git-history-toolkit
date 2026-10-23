@@ -63,6 +63,7 @@ class AuditorOptions:
     cache_dir: Path | None = None
     cache_max_mb: float = 256
     cache_max_age_days: int = 30
+    workers: int = 0
 
     @property
     def min_size_bytes(self) -> int:
@@ -103,6 +104,9 @@ class AuditorOptions:
         cache_max_age_days = int(getattr(args, "cache_max_age_days", 30))
         if not math.isfinite(cache_max_mb * 1048576) or cache_max_mb <= 0 or cache_max_age_days < 1:
             raise ValueError("Cache size must be positive and finite; cache age must be at least 1 day")
+        workers = int(getattr(args, "workers", 0))
+        from .git_runner import audit_workers
+        audit_workers(workers)
 
         return cls(
             repo=repo,
@@ -132,6 +136,7 @@ class AuditorOptions:
             cache_dir=Path(args.cache_dir).expanduser().resolve() if getattr(args, "cache_dir", None) else None,
             cache_max_mb=cache_max_mb,
             cache_max_age_days=cache_max_age_days,
+            workers=workers,
         )
 
 

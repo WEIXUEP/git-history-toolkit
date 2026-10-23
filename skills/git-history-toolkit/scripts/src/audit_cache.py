@@ -13,7 +13,7 @@ import sqlite3
 import sys
 import time
 
-from .git_runner import GitCommandError, GitRunner
+from .git_runner import GitCommandError, GitRunner, audit_workers, query_batches
 
 LOGGER = logging.getLogger(__name__)
 # Bump when stored facts or Git traversal semantics change.
@@ -197,11 +197,9 @@ class CachedGitRunner(GitRunner):
         self.revisions["HEAD"] = ref_state[0]
 
     def run_with_status(self, *args):
-        if self.cache.connection is None:
-            return self.raw.run_with_status(*args)
-        cacheable = args and args[0] in ("log", "ls-tree", "rev-list")
-        if not cacheable:
-            return self.raw.run_with_status(*args)
+        return next(self.iter_queries([args], workers=1))
+
+    def _freeze(self, args):
         frozen = []
         for arg in args:
             if arg == "--all":
@@ -210,18 +208,35 @@ class CachedGitRunner(GitRunner):
                 frozen.extend(roots if len(roots) <= 200 else ["--all"])
             else:
                 frozen.append(self.revisions.get(arg, arg))
-        key = [self.snapshot, args]
-        result = self.cache.get("git-read", key)
-        if result is not None:
-            return 0, result, ""
-        if self.raw.ref_state() != self.expected_state:
-            raise GitCommandError(list(args), 1, "Refs changed before cached query; audit again")
-        status, output, error = self.raw.run_with_status(*frozen)
-        if status == 0:
-            if self.raw.ref_state() != self.expected_state:
-                raise GitCommandError(list(args), 1, "Refs changed during cached query; result not cached")
-            self.cache.put("git-read", key, output)
-        return status, output, error
+        return frozen
+
+    def iter_queries(self, queries, workers=0):
+        # All SQLite access stays on the calling thread. Workers only read Git.
+        workers = audit_workers(workers)
+        if self.cache.connection is None:
+            yield from self.raw.iter_queries(queries, workers)
+            return
+        for batch in query_batches(queries, workers):
+            results, missing = [], []
+            for args in batch:
+                cacheable = bool(args and args[0] in ("log", "ls-tree", "rev-list"))
+                key = [self.snapshot, args] if cacheable else None
+                cached = self.cache.get("git-read", key) if cacheable else None
+                results.append((0, cached, "") if cached is not None else None)
+                if cached is None:
+                    missing.append((len(results) - 1, args, key))
+            guarded = any(key is not None for _, _, key in missing)
+            if guarded and self.raw.ref_state() != self.expected_state:
+                raise GitCommandError(list(batch[0]), 1, "Refs changed before cached query; audit again")
+            fresh = list(self.raw.iter_queries(
+                (self._freeze(args) if key is not None else args for _, args, key in missing), workers))
+            if guarded and self.raw.ref_state() != self.expected_state:
+                raise GitCommandError(list(batch[0]), 1, "Refs changed during cached query; result not cached")
+            for (index, _, key), result in zip(missing, fresh):
+                results[index] = result
+                if key is not None and result[0] == 0:
+                    self.cache.put("git-read", key, result[1])
+            yield from results
 
     def run(self, *args, check=True):
         status, output, error = self.run_with_status(*args)

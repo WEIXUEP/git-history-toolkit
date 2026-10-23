@@ -73,6 +73,11 @@ Cleanup audits always bypass cache, and confirmed cleanup clears its namespace
 before rewriting. Subtree clones have separate identities; there is no cached
 migration or publication approval. Use --no-cache when comparing fresh reads.
 Cache maintenance removes only disposable cache data, never reports/backups.
+History, Gerrit reachability and historical-snapshot queries run in bounded
+parallel batches by default (up to 4 Git processes). Use `--workers 1` for
+serial reads or `--workers N` (maximum 16) to tune the host. Read
+[references/audit-cache.md](references/audit-cache.md) for concurrency semantics.
+Rewriting and remote publication remain single confirmed workflows.
 
 ## Mutation and publication
 

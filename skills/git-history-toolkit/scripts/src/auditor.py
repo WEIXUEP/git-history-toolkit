@@ -81,12 +81,13 @@ class GitLargeObjectAuditor:
 
         gerrit_refs = [ref for ref in refs if ref.kind == "gerrit"]
         if self.options.scan_gerrit_refs:
-            GerritAnalyzer(self.runner, self.progress).analyze(refs, blob_map, coverage)
+            GerritAnalyzer(self.runner, self.progress, self.options.workers).analyze(refs, blob_map, coverage)
         else:
             coverage.warnings.append("Gerrit ref scanning was disabled by command-line option.")
 
         LOGGER.info("Analyzing history for %d large blobs", len(blobs))
-        HistoryAnalyzer(self.runner, self.progress).analyze(blobs, refs, gerrit_refs if self.options.scan_gerrit_refs else [])
+        HistoryAnalyzer(self.runner, self.progress, self.options.workers).analyze(
+            blobs, refs, gerrit_refs if self.options.scan_gerrit_refs else [])
         self.progress("Classification and reports", detail=f"{len(blobs)} large objects; inventory: {cache.info().get('mode')}")
         BlobClassifier(self.options, audit_time).classify(blobs)
 

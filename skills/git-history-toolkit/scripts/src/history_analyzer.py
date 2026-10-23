@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from contextlib import closing
 
-from .git_runner import GitRunner
+from .git_runner import GitCommandError, GitRunner, audit_workers
 from .models import BlobInfo, BlobHistoryInfo, RefInfo
 
 
@@ -12,9 +13,10 @@ LOG_FORMAT = "%H%x00%ct%x00%s"
 
 
 class HistoryAnalyzer:
-    def __init__(self, runner: GitRunner, progress=None) -> None:
+    def __init__(self, runner: GitRunner, progress=None, workers=0) -> None:
         self.runner = runner
         self.progress = progress or (lambda *args, **kwargs: None)
+        self.workers = audit_workers(workers)
 
     def analyze(
         self,
@@ -27,35 +29,31 @@ class HistoryAnalyzer:
             branch_revisions = ["HEAD"]
         gerrit_revisions = [ref.name for ref in gerrit_refs]
 
-        self.progress("Object history", 0, len(blobs), "Searching additions, replacements and deletions")
-        for index, blob in enumerate(blobs):
-            self.progress("Object history", index, len(blobs), f"Searching object {blob.sha[:12]}")
-            branch_history = self._find(blob.sha, branch_revisions)
-            gerrit_history = self._find(blob.sha, gerrit_revisions) if gerrit_revisions else []
-            history = self._merge(branch_history, gerrit_history)
-            blob.first_seen_time = history.first_seen_time
-            blob.last_seen_time = history.last_seen_time
-            blob.first_seen_commit = history.first_seen_commit
-            blob.last_seen_commit = history.last_seen_commit
-            blob.last_commit_subject = history.last_commit_subject
-            blob.commit_count = history.commit_count
-            blob.branch_last_seen = self._latest(branch_history)
-            blob.gerrit_last_seen = self._latest(gerrit_history)
-            self.progress("Object history", index + 1, len(blobs), f"Searched object {blob.sha[:12]}")
+        queries = (("log", f"--format={LOG_FORMAT}", f"--find-object={blob.sha}",
+                    "--no-renames", *revisions, "--")
+                   for blob in blobs for revisions in (branch_revisions, gerrit_revisions) if revisions)
+        self.progress("Object history", 0, len(blobs),
+                      f"Searching additions, replacements and deletions; up to {self.workers} Git queries in parallel")
+        with closing(self.runner.iter_queries(queries, self.workers)) as results:
+            for index, blob in enumerate(blobs):
+                branch_history = self._records(next(results))
+                gerrit_history = self._records(next(results)) if gerrit_revisions else []
+                history = self._merge(branch_history, gerrit_history)
+                blob.first_seen_time = history.first_seen_time
+                blob.last_seen_time = history.last_seen_time
+                blob.first_seen_commit = history.first_seen_commit
+                blob.last_seen_commit = history.last_seen_commit
+                blob.last_commit_subject = history.last_commit_subject
+                blob.commit_count = history.commit_count
+                blob.branch_last_seen = self._latest(branch_history)
+                blob.gerrit_last_seen = self._latest(gerrit_history)
+                self.progress("Object history", index + 1, len(blobs), f"Searched object {blob.sha[:12]}")
 
-    def _find(self, sha: str, revisions: list[str]) -> list[tuple[str, datetime, str]]:
-        if not revisions:
-            return []
-        status, stdout, _stderr = self.runner.run_with_status(
-            "log",
-            f"--format={LOG_FORMAT}",
-            f"--find-object={sha}",
-            "--no-renames",
-            *revisions,
-            "--",
-        )
+    @staticmethod
+    def _records(result) -> list[tuple[str, datetime, str]]:
+        status, stdout, stderr = result
         if status != 0:
-            return []
+            raise GitCommandError(["log", "--find-object"], status, stderr)
         records: list[tuple[str, datetime, str]] = []
         for line in stdout.splitlines():
             fields = line.split("\x00", 2)

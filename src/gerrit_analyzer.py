@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+from contextlib import closing
 
-from .git_runner import GitRunner
+from .git_runner import GitCommandError, GitRunner
 from .models import BlobInfo, RefInfo, ScanCoverage
 
 
@@ -12,9 +13,10 @@ CHANGE_REF_PATTERN = re.compile(r"^refs/changes/\d{2}/(?P<change>\d+)/(?P<patchs
 
 
 class GerritAnalyzer:
-    def __init__(self, runner: GitRunner, progress=None) -> None:
+    def __init__(self, runner: GitRunner, progress=None, workers=0) -> None:
         self.runner = runner
         self.progress = progress or (lambda *args, **kwargs: None)
+        self.workers = workers
 
     def analyze(
         self, refs: list[RefInfo], blobs: dict[str, BlobInfo], coverage: ScanCoverage
@@ -31,21 +33,21 @@ class GerritAnalyzer:
 
         coverage.gerrit_refs = True
         self.progress("Gerrit patch sets", 0, len(gerrit_refs))
-        for index, ref in enumerate(gerrit_refs):
-            self.progress("Gerrit patch sets", index, len(gerrit_refs), ref.name)
-            match = CHANGE_REF_PATTERN.match(ref.name)
-            if not match:
-                continue
-            change, patchset = match.group("change"), match.group("patchset")
-            output = self.runner.run("rev-list", "--objects", ref.name)
-            for line in output.splitlines():
-                sha, _, path = line.partition(" ")
-                blob = blobs.get(sha)
-                if blob is None:
-                    continue
-                blob.gerrit_refs.add(ref.name)
-                blob.gerrit_change_numbers.add(change)
-                blob.gerrit_patchsets.add(patchset)
-                if path:
-                    blob.paths.add(path)
-            self.progress("Gerrit patch sets", index + 1, len(gerrit_refs), ref.name)
+        queries = (("rev-list", "--objects", ref.name) for ref in gerrit_refs)
+        with closing(self.runner.iter_queries(queries, self.workers)) as results:
+            for index, (ref, (status, output, error)) in enumerate(zip(gerrit_refs, results)):
+                if status:
+                    raise GitCommandError(["rev-list", ref.name], status, error)
+                match = CHANGE_REF_PATTERN.match(ref.name)
+                change, patchset = match.group("change"), match.group("patchset")
+                for line in output.splitlines():
+                    sha, _, path = line.partition(" ")
+                    blob = blobs.get(sha)
+                    if blob is None:
+                        continue
+                    blob.gerrit_refs.add(ref.name)
+                    blob.gerrit_change_numbers.add(change)
+                    blob.gerrit_patchsets.add(patchset)
+                    if path:
+                        blob.paths.add(path)
+                self.progress("Gerrit patch sets", index + 1, len(gerrit_refs), ref.name)

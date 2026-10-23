@@ -54,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly protect a blob SHA; may be repeated.",
     )
     parser.add_argument("--output-dir", default="./git_audit")
+    parser.add_argument("--workers", type=int, choices=range(17), default=0, metavar="0-16",
+                        help="Parallel read-only Git queries: 0=automatic (up to 4), 1=serial, maximum 16.")
     parser.add_argument("--cache", action=argparse.BooleanOptionalAction, default=True,
                         help="Reuse disposable audit facts (default: enabled); cleanup audits always read fresh Git data.")
     parser.add_argument("--cache-dir", help="External cache root; defaults to the OS user cache directory.")

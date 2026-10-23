@@ -147,6 +147,15 @@ and LRU eviction. Corrupt/unavailable caches fall back to fresh Git reads.
 Use --no-cache, --cache-dir, --cache-max-mb or --cache-max-age-days as needed.
 Cleanup audits always bypass caching and clear it before the confirmed rewrite.
 
+History searches, Gerrit reachability and historical-snapshot queries run in
+parallel by default, with at most 4 Git subprocesses (bounded by CPU count).
+Use `--workers 1` for serial reads or `--workers 2` / `--workers 8` to tune the
+host; the explicit maximum is 16. Batches bound pending work and memory use.
+Cache access and result merging stay on the coordinating thread; latest-presence
+timestamps retain deterministic chronological ordering. More workers can cause
+disk contention, so benchmark before raising the limit. Cleanup execution and
+publication remain separate confirmed operations.
+
 ```powershell
 python .\git_history_toolkit.py cache status --repo C:\repos\application
 python .\git_history_toolkit.py cache prune --repo C:\repos\application

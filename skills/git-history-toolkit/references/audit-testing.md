@@ -44,3 +44,21 @@ Unit tests in the auditor repository test confirmation cancellation, stale
 audits, state changes, backup verification, remote URL restoration and leases.
 The rewrite subprocess is mocked in these tests: verification does not grant
 approval for an actual filter-repo run, even on a fixture clone.
+
+## Parallel scan regression
+
+Run the packaged concurrency and shared-fixture parity test with an explicit
+fixture path:
+
+```powershell
+$env:GIT_HISTORY_FIXTURE = '<fixture>'
+python '<skill>/scripts/test_parallel_audit.py' -v
+```
+
+It compares complete blob facts and HTML review rows for serial, four-worker,
+cold-cache and warm-cache reads, and prints measured elapsed times (not a fixed
+speedup requirement). It checks bounded concurrency, out-of-order snapshot
+completion, early termination, calling-thread cache ownership, serial mode and
+worker failure propagation. Missing fixtures are reported as skipped. Repository
+cache tests additionally reject cache writes if refs change during a parallel
+batch and ensure failed queries are not cached. No history cleanup is performed.

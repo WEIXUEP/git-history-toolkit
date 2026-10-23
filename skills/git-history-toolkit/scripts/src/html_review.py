@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from contextlib import closing
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
@@ -13,34 +14,44 @@ import threading
 import time
 import webbrowser
 
-from .git_runner import GitRunner
+from .git_runner import GitCommandError, GitRunner, audit_workers
 from .models import CleanupAction
 
 
-def historical_presence(runner, blobs, progress=None):
+def historical_presence(runner, blobs, progress=None, workers=0):
     """Find the latest committer timestamp of a snapshot containing each blob."""
     remaining = {blob.sha for blob in blobs}
     found = {}
     if not remaining:
         return found
+    workers = audit_workers(workers)
     commits = [line.split() for line in runner.run("log", "--all", "HEAD", "--format=%ct %H").splitlines()]
+    commits.sort(key=lambda row: (int(row[0]), row[1]), reverse=True)
     total = len(commits)
     processed = 0
-    for index, (stamp, commit) in enumerate(sorted(commits, key=lambda row: (int(row[0]), row[1]), reverse=True)):
-        if not remaining:
-            break
-        if progress:
-            progress("Historical snapshots", index, total,
-                     f"{len(found)} / {len(blobs)} object timestamps found")
-        present = set()
-        for record in runner.run("ls-tree", "-r", "-z", "--full-tree", commit).split("\0"):
-            header = record.partition("\t")[0].split()
-            if len(header) == 3 and header[1] == "blob" and header[2] in remaining:
-                present.add(header[2])
-        for sha in present:
-            found[sha] = {"time": datetime.fromtimestamp(int(stamp), timezone.utc).isoformat(), "commit": commit}
-        remaining.difference_update(present)
-        processed += 1
+    if progress:
+        progress("Historical snapshots", 0, total, f"Searching with up to {workers} parallel Git queries")
+    queries = (("ls-tree", "-r", "-z", "--full-tree", commit) for _, commit in commits)
+    # Consume by timestamp order, regardless of worker completion order, so a
+    # faster old tree cannot overwrite the latest containing snapshot.
+    with closing(runner.iter_queries(queries, workers)) as results:
+        for (stamp, commit), (status, output, error) in zip(commits, results):
+            if status:
+                raise GitCommandError(["ls-tree", commit], status, error)
+            present = set()
+            for record in output.split("\0"):
+                header = record.partition("\t")[0].split()
+                if len(header) == 3 and header[1] == "blob" and header[2] in remaining:
+                    present.add(header[2])
+            for sha in present:
+                found[sha] = {"time": datetime.fromtimestamp(int(stamp), timezone.utc).isoformat(), "commit": commit}
+            remaining.difference_update(present)
+            processed += 1
+            if progress:
+                progress("Historical snapshots", processed, total,
+                         f"{len(found)} / {len(blobs)} object timestamps found")
+            if not remaining:
+                break
     if progress:
         progress("Historical snapshots", processed, total,
                  f"{len(found)} / {len(blobs)} object timestamps found; search complete")
@@ -66,7 +77,8 @@ def review_payload(result, options, mode, progress=None):
             else:
                 presence[blob.sha] = value
         if missing:
-            calculated = historical_presence(CachedGitRunner(runner, cache, result.ref_state), missing, progress)
+            calculated = historical_presence(CachedGitRunner(runner, cache, result.ref_state), missing,
+                                             progress, options.workers)
             presence.update(calculated)
             if runner.ref_state() != result.ref_state:
                 raise ValueError("Refs changed while calculating historical presence")

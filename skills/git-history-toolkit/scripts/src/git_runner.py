@@ -3,7 +3,22 @@
 from __future__ import annotations
 
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
+import os
 from pathlib import Path
+
+
+def audit_workers(value=0):
+    if not 0 <= value <= 16:
+        raise ValueError("workers must be between 0 (automatic) and 16")
+    return value or min(4, os.cpu_count() or 1)
+
+
+def query_batches(queries, workers):
+    source = iter(queries)
+    while batch := list(islice(source, workers)):
+        yield batch
 
 
 class GitCommandError(RuntimeError):
@@ -62,4 +77,17 @@ class GitRunner:
             check=False,
         )
         return completed.returncode, completed.stdout, completed.stderr
+
+    def iter_queries(self, queries, workers=0):
+        """Bound read-only query concurrency and return results in input order."""
+        workers = audit_workers(workers)
+        if workers == 1:
+            for args in queries:
+                yield self.run_with_status(*args)
+            return
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="git-audit") as pool:
+            for batch in query_batches(queries, workers):
+                pending = [pool.submit(self.run_with_status, *args) for args in batch]
+                for future in pending:
+                    yield future.result()
 

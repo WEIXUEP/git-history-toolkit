@@ -16,7 +16,7 @@ from unittest.mock import patch
 from src.auditor import GitLargeObjectAuditor
 from src.audit_cache import AuditCache, CachedGitRunner
 from src.blob_scanner import BlobScanner
-from src.git_runner import GitRunner
+from src.git_runner import GitCommandError, GitRunner
 from src.models import AuditorOptions
 from src.html_review import review_payload
 
@@ -180,6 +180,27 @@ class AuditCacheTests(unittest.TestCase):
         removed = self.audit()
         self.assertEqual(removed.cache_info["mode"], "full")
         self.assertEqual(self.facts(removed), self.facts(self.audit(cache=False)))
+
+    def test_parallel_batch_ref_changes_reject_all_new_cache_writes(self):
+        cache = self.cache()
+        state = self.runner.ref_state()
+        cached = CachedGitRunner(self.runner, cache, state)
+        queries = [("log", "--format=%H", "HEAD"), ("ls-tree", "-r", "HEAD")]
+        before = cache.writes
+        changed = ("0" * 40, state[1], state[2])
+        with patch.object(self.runner, "ref_state", side_effect=[state, changed]):
+            with self.assertRaisesRegex(GitCommandError, "Refs changed during"):
+                list(cached.iter_queries(queries, workers=2))
+        self.assertEqual(cache.writes, before)
+
+    def test_parallel_failed_query_is_not_cached(self):
+        cache = self.cache()
+        cached = CachedGitRunner(self.runner, cache, self.runner.ref_state())
+        query = ("log", "--format=%H", "no-such-ref")
+        before = cache.writes
+        result = list(cached.iter_queries([query], workers=2))[0]
+        self.assertNotEqual(result[0], 0)
+        self.assertEqual(cache.writes, before)
 
     def test_presence_reused_only_for_matching_refs(self):
         result = self.audit()

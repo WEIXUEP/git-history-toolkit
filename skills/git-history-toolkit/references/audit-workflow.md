@@ -28,6 +28,15 @@ Audit reads local objects and writes reports. It does not fetch, rewrite, push, 
 - **Gerrit administrator review** (`GERRIT_ADMIN_REVIEW`) objects.
 - Recent objects, omitted scope and coverage warnings.
 
+Read-only object history, Gerrit patch-set reachability and historical-snapshot
+queries use bounded parallel batches by default. `--workers 0` selects up to
+4 Git processes, capped by available logical CPUs; `--workers 1` is serial.
+Use `--workers 2` for a busy/shared disk or explicitly tune up to 16 for a
+suitable host. More workers can increase disk contention and memory usage;
+compare the same repository/ref snapshot before increasing them. Cache hits
+skip Git queries. File selection, threshold confirmation, rewriting and push
+approval do not run concurrently or change with this option.
+
 The CLI then opens an HTML review by default. Keep the local review server
 available while the user inspects it, open the page and provide its live URL.
 The table must expose file sizes, latest historical presence and suffix-based

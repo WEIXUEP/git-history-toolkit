@@ -60,6 +60,31 @@ and invalidation events.
 HTML history-presence reuse is logged separately in presence-cache-events.json.
 Cache maintenance prints JSON including payload and physical database bytes.
 
+## Parallel reads
+
+`--workers 0` (default) uses up to 4 read-only Git subprocesses, capped by logical
+CPU count; 1 runs serially and explicit values up to 16 are supported. This
+applies to object-history searches, Gerrit patch-set reachability and historical
+snapshot trees. Object inventory already uses Git batch operations. Actual
+history rewriting and publication are separate confirmed operations, never
+multiple competing writers to the same repository.
+
+Tasks are submitted in bounded batches, keeping pending work and buffered tree
+outputs proportional to the worker count. Timestamp queries are consumed in
+descending timestamp/OID order, regardless of worker completion order, to retain
+the exact latest containing snapshot. Once all timestamps are found no further
+batch is submitted; already started reads finish before returning. Progress
+counts completed/consumed objects or snapshots, not submitted tasks, and does
+not pretend a searched prefix covers every historical commit.
+
+All SQLite reads/writes and result merges stay on the coordinating thread.
+Only raw Git reads run in workers. Uncached batches recheck refs before and
+after reading when caching is enabled; changed refs prevent new cache writes
+and stop the audit. Changing worker count does not invalidate otherwise valid
+cached facts. Git failures stop analysis rather than create empty history
+results. Very large trees, mechanical/shared disks and repositories with few
+candidate objects may benefit less; use 1 or 2 workers if disk contention dominates.
+
 ## Maintenance
 
 ```powershell
