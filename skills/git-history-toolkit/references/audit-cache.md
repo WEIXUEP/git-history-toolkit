@@ -4,6 +4,12 @@ CLI audits use a Python-standard-library SQLite cache by default. Programmatic
 callers opt in with cache=True. The cache is disposable: it contains Git facts,
 not cleanup decisions, user approvals, bundles or rewritten repositories.
 
+Completed reports are separate from this cache. Use `review --report <directory>`
+to reopen the saved table without a scan, or add --execute-cleanup for validated
+new-format report resumption and fresh HTML approval. See
+[saved-reviews.md](saved-reviews.md). Fresh cleanup audits still bypass cache;
+saved-report resumption validates existing facts instead of launching an audit.
+
 ## Reuse and invalidation
 
 - A namespace hashes the canonical Git common directory and worktree root.

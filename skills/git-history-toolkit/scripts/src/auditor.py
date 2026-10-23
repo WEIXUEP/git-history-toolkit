@@ -31,11 +31,12 @@ class GitLargeObjectAuditor:
 
     def run(self) -> AuditResult:
         self.progress("Repository inspection", detail="Validating repository and incremental cache")
-        from .audit_cache import AuditCache, CachedGitRunner
+        from .audit_cache import AuditCache, CachedGitRunner, git_context
         root = RepositoryInspector(self.runner).validate()
         self.runner.repo = root
         raw = self.runner
         cache = AuditCache(raw, self.options)
+        self._audit_context = git_context(raw)
         state = raw.ref_state()
         self.runner = CachedGitRunner(raw, cache, state)
         try:
@@ -109,6 +110,8 @@ class GitLargeObjectAuditor:
             cache_info=cache.info(),
         )
         result.report_files = AuditReporter().write(result)
+        from .saved_audit import save_audit
+        save_audit(result, self.options, self.runner, self._audit_context)
         self.progress("Audit reports ready", detail=f"{len(blobs)} large objects; preparing historical timestamps")
         return result
 

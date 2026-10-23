@@ -17,7 +17,12 @@ uses the module. Check the required command before proposing execution.
 ## Select the workflow
 
 - For large objects, deleted files or old binary versions, read
-  [references/audit-workflow.md](references/audit-workflow.md). Start with a
+  [references/audit-workflow.md](references/audit-workflow.md). To reopen an
+  already completed report, use `review --report <directory>` and read
+  [references/saved-reviews.md](references/saved-reviews.md); do not rescan
+  merely to reach the object table. Resumable cleanup requires a new-format
+  saved report, unchanged refs/context and fresh HTML CLEANUP approval.
+  For a new analysis, start with a
   read-only audit. Before scanning, the user must manually confirm minimum
   size in MiB and minimum age in days in the default HTML parameter page.
   100 MiB / 180 days are suggestions, never automatically accepted values;

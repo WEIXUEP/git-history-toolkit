@@ -59,6 +59,8 @@ def historical_presence(runner, blobs, progress=None, workers=0):
 
 
 def review_payload(result, options, mode, progress=None):
+    if result.review_presence is not None:
+        return _review_payload(result, options, mode, result.review_presence)
     if progress:
         progress("Preparing object review", detail="Checking refs and cached historical timestamps")
     runner = GitRunner(result.repository)
@@ -90,6 +92,15 @@ def review_payload(result, options, mode, progress=None):
         (result.output_dir / "presence-cache-events.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     finally:
         cache.close()
+    if runner.ref_state() != result.ref_state:
+        raise ValueError("Refs changed while computing history timestamps; audit again")
+    payload = _review_payload(result, options, mode, presence)
+    from .saved_audit import save_review
+    save_review(result, payload)
+    return payload
+
+
+def _review_payload(result, options, mode, presence):
     rows = []
     for blob in result.blobs:
         suffixes = sorted({PurePosixPath(path).suffix.lower()
@@ -103,12 +114,11 @@ def review_payload(result, options, mode, progress=None):
                      "last_change": blob.effective_last_seen.isoformat() if blob.effective_last_seen else None,
                      "age_days": blob.age_days(result.audit_time),
                      "refs": sorted(blob.current_refs | blob.gerrit_refs)})
-    if runner.ref_state() != result.ref_state:
-        raise ValueError("Refs changed while computing history timestamps; audit again")
     return {"repository": str(result.repository), "audit_time": result.audit_time.isoformat(),
             "mode": mode, "backup": str(result.output_dir / "before_cleanup.bundle"),
             "threshold_mb": options.min_size_mb, "threshold_days": options.min_age_days,
-            "refs": result.ref_state, "rows": rows}
+            "refs": result.ref_state, "rows": rows,
+            "warnings": result.warnings if result.review_presence is not None else []}
 
 
 class LocalReviewHTTPServer(HTTPServer):

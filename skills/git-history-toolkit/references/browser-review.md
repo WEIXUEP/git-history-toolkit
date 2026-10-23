@@ -7,6 +7,12 @@ asset dependency. A modern local browser is the only UI requirement.
 
 ## Review without rewriting
 
+To open a completed report directly instead of scanning again, use
+`review --report <directory>`; see [saved-reviews.md](saved-reviews.md).
+New scans save audit facts and prepared table timestamps independently of
+the disposable cache. Restored pages show their original date and any stale
+state warnings. New analysis still follows threshold confirmation below.
+
 Before scanning, the CLI opens a separate threshold page. The user edits or
 keeps the proposed minimum size (MiB) and age (whole days), checks the manual
 confirmation box and chooses Confirm and analyze. Editing a value clears

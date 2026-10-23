@@ -47,6 +47,14 @@ approval for an actual filter-repo run, even on a fixture clone.
 
 ## Parallel scan regression
 
+Saved-report regression is packaged as `scripts/test_saved_audit.py`. Run it
+with Python/git-filter-repo to check direct review without history queries,
+legacy/cache/offline recovery, changed refs/config, corrupt data, cancellation
+and a real cleanup only in its disposable fixture. Repository developers can
+also run `tests/browser_saved_review_smoke.cjs` with Playwright and a Python
+path to check the restored table, saved-date banner, empty selection and
+desktop layouts. The browser test cancels its own read-only session.
+
 Run the packaged concurrency and shared-fixture parity test with an explicit
 fixture path:
 

@@ -36,6 +36,16 @@ def default_cache_root():
     return base / "git-history-toolkit"
 
 
+def git_context(runner, common=None):
+    common = common or Path(runner.run("rev-parse", "--path-format=absolute", "--git-common-dir").strip()).resolve()
+    grafts = common / "info/grafts"
+    return digest([SCHEMA, runner.run("--version"),
+        runner.run("config", "--list", "--show-origin"),
+        runner.run("for-each-ref", "refs/replace", "--format=%(refname) %(objectname)"),
+        grafts.read_bytes().hex() if grafts.exists() else "",
+        {k: v for k, v in os.environ.items() if k.startswith("GIT_")}])
+
+
 class AuditCache:
     def __init__(self, runner, options):
         self.connection = None
@@ -72,12 +82,7 @@ class AuditCache:
                 self.connection.execute(f"PRAGMA user_version={SCHEMA}")
                 self.events.append("Cache schema initialized/reset")
             # Config, replace refs, grafts and Git version can alter traversal semantics.
-            grafts = common / "info/grafts"
-            self.context = digest([SCHEMA, runner.run("--version"),
-                runner.run("config", "--list", "--show-origin"),
-                runner.run("for-each-ref", "refs/replace", "--format=%(refname) %(objectname)"),
-                grafts.read_bytes().hex() if grafts.exists() else "",
-                {k: v for k, v in os.environ.items() if k.startswith("GIT_")}])
+            self.context = git_context(runner, common)
             self.prune()
             self.mode = "ready"
         except (OSError, ValueError, sqlite3.Error, GitCommandError) as exc:

@@ -86,6 +86,7 @@ class GitHistoryRewriter:
         self._ensure_cleanup_prerequisites()
         if result.ref_state is None or self.runner.ref_state() != result.ref_state:
             raise CleanupError("audit refs are stale or missing; audit again before cleanup")
+        self._ensure_resume_context(result)
         approved_state = self._repository_state()
         self._print_candidates(clean_candidates)
         self.emit(f"Repository: {self.runner.repo.resolve()}")
@@ -107,6 +108,7 @@ class GitHistoryRewriter:
         self._ensure_safe_workspace(result)
         if self._repository_state() != approved_state:
             raise CleanupError("repository refs or HEAD changed during confirmation; audit again and reconfirm")
+        self._ensure_resume_context(result)
 
         if self.options.push_after_cleanup:
             self._push_branch = self._branch_name()
@@ -188,6 +190,12 @@ class GitHistoryRewriter:
             "--output-dir must be outside the repository for cleanup; "
             "otherwise generated reports become untracked worktree files"
         )
+
+    def _ensure_resume_context(self, result):
+        if result.resume_context is not None:
+            from .audit_cache import git_context
+            if git_context(self.runner) != result.resume_context:
+                raise CleanupError("Git context changed since saved-report validation; audit again")
 
     def _confirmed(self, prompt: str, token: str) -> bool:
         try:

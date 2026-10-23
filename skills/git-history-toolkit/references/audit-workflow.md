@@ -4,6 +4,13 @@ Use this skill's `scripts/git_history_auditor.py`, resolved relative to the skil
 
 ## Inspect and audit
 
+For an already completed report, first read [saved-reviews.md](saved-reviews.md)
+and use `review --report <directory>`. That command skips analysis and threshold
+confirmation while retaining the saved audit date/policy. New-format reports
+can resume cleanup after lightweight state/object validation and fresh HTML
+CLEANUP approval; legacy reports support viewing only. A new audit follows the
+threshold-confirmation workflow below.
+
 Identify the absolute repository root, requested thresholds, branch/tag scope, and whether Gerrit is involved. Inspect worktree status, shallow status, refs, and configured fetch/push destinations. Use an existing working Python interpreter; an OS Python launcher placeholder is not an interpreter. This CLI requires a full, non-empty working clone; audit bare remotes through an independent full clone.
 
 Suggest **100 MiB / 180 days** unless the user specifies other values. The CLI

@@ -270,6 +270,8 @@ class AuditResult:
     report_files: dict[str, Path] = field(default_factory=dict)
     ref_state: tuple[str, str, str] | None = None
     cache_info: dict[str, Any] = field(default_factory=dict)
+    review_presence: dict[str, Any] | None = None
+    resume_context: str | None = None
 
     @property
     def cleanup_count(self) -> int:

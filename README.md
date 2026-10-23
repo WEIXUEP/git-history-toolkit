@@ -99,6 +99,21 @@ See [Git/Gerrit coverage and recovery](skills/git-history-toolkit/references/git
 
 ## Browser Confirmation
 
+Open a completed report directly, without scanning or another threshold page:
+
+```powershell
+python .\git_history_toolkit.py review --report C:\audit\application_20261023_120000
+```
+
+New reports persist audit-session.json and prepared review-payload.json. Add
+`--execute-cleanup` to validate unchanged refs/Git context and saved object
+metadata, then request a new HTML selection and CLEANUP approval. This skips
+history traversal. Old reports can be viewed; cleanup needs a new-format audit
+once because old reports did not record complete options/context. Missing
+historical presence times display Unknown without silently rescanning.
+Every review writes receipts/backups to a new external directory, preserving
+the original report. See [saved review workflow](skills/git-history-toolkit/references/saved-reviews.md).
+
 Every CLI audit opens a Python-served local HTML threshold confirmation by default.
 After confirmation, that page shows live stages, elapsed time and history-search
 counts, then switches to object review in the same tab. Percentages apply to the
